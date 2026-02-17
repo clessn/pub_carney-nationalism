@@ -55,25 +55,21 @@ table(Census21$gender, useNA = "always")
 table(Survey$ses_educ, useNA = "always")
 Survey$ses_educ <- as.integer(Survey$ses_educ)
 Survey$education <- NA_integer_
-Survey$education[Survey$ses_educ <= 5] <- 1 # high school or less
-Survey$education[Survey$ses_educ == 6] <- 2 # college
-Survey$education[Survey$ses_educ > 6] <- 3 # university
+Survey$education[Survey$ses_educ <= 6] <- 1 # 5 or less high school or less; 6 = college
+Survey$education[Survey$ses_educ > 6] <- 2 # university
 Survey$education <- factor(
-  ifelse(Survey$education == 1, "High school",
-  ifelse(Survey$education == 2, "College", "University")),
-  levels = c("High school", "College", "University")
+  ifelse(Survey$education == 1, "High school or college", "University"),
+  levels = c("High school or college", "University")
 )
 table(Survey$education, useNA = "always")
 
 table(Census21$HDGREE, useNA = "always")
 Census21$education <- NA_integer_
-Census21$education[Census21$HDGREE %in% seq(1, 2)] <- 1
-Census21$education[Census21$HDGREE %in% seq(3, 7)] <- 2
-Census21$education[Census21$HDGREE %in% seq(8, 13)] <- 3
+Census21$education[Census21$HDGREE %in% seq(1, 7)] <- 1 # 1+2 = high school or less, 3-7 = college
+Census21$education[Census21$HDGREE %in% seq(8, 13)] <- 2 # university
 Census21$education <- factor(
-  ifelse(Census21$education == 1, "High school",
-  ifelse(Census21$education == 2, "College", "University")),
-  levels = c("High school", "College", "University")
+  ifelse(Census21$education == 1, "High school or college", "University"),
+  levels = c("High school or college", "University")
 )
 table(Census21$education, useNA = "always")
 
@@ -82,8 +78,8 @@ table(Survey$ses_income, useNA = "always")
 Survey$ses_income <- as.integer(Survey$ses_income)
 Survey$income <- NA_integer_
 Survey$income[Survey$ses_income <= 5]  <- 1
-Survey$income[Survey$ses_income > 5 & Survey$ses_income <= 8] <- 2
-Survey$income[Survey$ses_income > 8] <- 3
+Survey$income[Survey$ses_income > 5 & Survey$ses_income <= 7] <- 2
+Survey$income[Survey$ses_income > 7] <- 3
 Survey$income <- factor(
   ifelse(Survey$income == 3, "High",
   ifelse(Survey$income == 2, "Mid", "Low")),
@@ -94,8 +90,8 @@ table(Survey$income, useNA = "always")
 table(Census21$CFInc, useNA = "always")
 Census21$income <- NA_integer_
 Census21$income[Census21$CFInc %in% seq(1, 16)] <- 1 # 0-60000
-Census21$income[Census21$CFInc %in% seq(17, 29)] <- 2 # 60000-150000
-Census21$income[Census21$CFInc %in% seq(30, 33)] <- 3 # 150000-...
+Census21$income[Census21$CFInc %in% seq(17, 25)] <- 2 # 60000-110000
+Census21$income[Census21$CFInc %in% seq(26, 33)] <- 3 # 110000+
 Census21$income <- factor(
   ifelse(Census21$income == 3, "High",
   ifelse(Census21$income == 2, "Mid", "Low")),
@@ -131,29 +127,25 @@ table(Census21$language, useNA = "always")
 table(Survey$ses_province, useNA = "always")
 Survey$ses_province <- as.integer(Survey$ses_province)
 Survey$province <- NA_integer_
-Survey$province[Survey$ses_province >= 12 | Survey$ses_province <= 3 | Survey$ses_province == 7 | Survey$ses_province == 8] <- 1
-Survey$province[Survey$ses_province == 9] <- 2
-Survey$province[Survey$ses_province == 11]  <- 3
-Survey$province[Survey$ses_province == 10 | (Survey$ses_province <= 6 & Survey$ses_province > 3)] <- 4
+Survey$province[Survey$ses_province >= 12 | Survey$ses_province <= 3 | Survey$ses_province == 7 | Survey$ses_province == 8] <- 1 # West and North
+Survey$province[Survey$ses_province == 11]  <- 2 # Quebec
+Survey$province[Survey$ses_province == 9 | Survey$ses_province == 10 | (Survey$ses_province <= 6 & Survey$ses_province > 3)] <- 3 # 9 = Ontario, other = Atlantic
 Survey$province <- factor(
   ifelse(Survey$province == 1, "West",
-  ifelse(Survey$province == 2, "Ontario",
-  ifelse(Survey$province == 3, "Quebec", "Atlantic"))),
-  levels = c("West", "Ontario", "Quebec", "Atlantic")
+  ifelse(Survey$province == 2, "Quebec", "Other")),
+  levels = c("West", "Quebec", "Other")
 )
 table(Survey$province, useNA = "always")
 
 table(Census21$PR, useNA = "always")
 Census21$province <- NA_integer_
 Census21$province[Census21$PR >= 46] <- 1 # West and North
-Census21$province[Census21$PR == 35] <- 2
-Census21$province[Census21$PR == 24]  <- 3
-Census21$province[Census21$PR <= 13] <- 4
+Census21$province[Census21$PR == 24] <- 2 # Quebec
+Census21$province[Census21$PR == 35 | Census21$PR <= 13] <- 3 # 35 = Ontario, others are Atlantic provinces
 Census21$province <- factor(
   ifelse(Census21$province == 1, "West",
-  ifelse(Census21$province == 2, "Ontario",
-  ifelse(Census21$province == 3, "Quebec", "Atlantic"))),
-  levels = c("West", "Ontario", "Quebec", "Atlantic")
+  ifelse(Census21$province == 2, "Quebec", "Other")),
+  levels = c("West", "Quebec", "Other")
 )
 table(Census21$province, useNA = "always")
 
@@ -162,8 +154,8 @@ targets <- list(
   age = prop.table(table(Census21$age)), # 27% 18-34, 32.7% 35-54, 40.2% 55+
   gender = prop.table(table(Census21$gender)), # 51.1% women, 48.9% men
   education = prop.table(table(Census21$education)), # 40.6% high school, 28.8% college, 30.7% university
-  income = prop.table(table(Census21$income)), # 31.5% low, 45.7% mid, 22.9% high (before tax)
-  language = prop.table(table(Census21$lang)), # 64% English, 19.4% French, 16.7% other (first language spoken at home)
+  #income = prop.table(table(Census21$income)), # 31.5% low, 29.5% mid, 39% high (before tax)
+  language = prop.table(table(Census21$language)), # 64% English, 19.4% French, 16.7% other (first language spoken at home)
   province = prop.table(table(Census21$province)) # 31.6% West, 38.8% Ontario, 22.9% Quebec, 6.7% Atlantic
 )
 
@@ -172,11 +164,12 @@ anesrake::anesrakefinder(targets, Survey, choosemethod = "total")
 outsave <- anesrake::anesrake(
   inputter = targets,
   dataframe = Survey,
-  caseid = 1:length(Survey$gender))
+  caseid = 1:nrow(Survey))
 summary(outsave)
 Survey$weights <- outsave$weightvec # add weights to the dataset
 summary(Survey$weights)
-n <- length(Survey$income) # calculate weighting loss (design effect)
-weighting_loss <- ((sum(Survey$weights^2) / (sum(Survey$weights))^2) * n) - 1 # Kish's Effective Sample Size formula
-wpct(Survey$pid_liberal)
-wpct(Survey$pid_liberal, Survey$weights)
+#Survey$valid <- Survey[Survey$weights > 0.5]
+hist(Survey$weights)
+((sum(Survey$weights^2) / (sum(Survey$weights))^2) * length(Survey$income)) - 1 # calculate weighting loss (design effect)
+#wpct(Survey$pid_liberal)
+#wpct(Survey$pid_liberal, Survey$weights)
