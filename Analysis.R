@@ -6,6 +6,61 @@ DataForJoin <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/Oppos
 Census21 <- read.csv("_SharedFolder_carney-nationalism/_data/Census2021_ind.csv")
 
 # Clean and rename ####
+## Experimental treatment: Recall of a pledge ####
+table(Survey$promise_party, useNA = "always")
+table(!is.na(Survey$promise_mostImport_d), !is.na(Survey$promise_mostImport_s), useNA = "always")
+Survey$promise_mostImport_d[!is.na(Survey$promise_mostImport_d) & !is.na(Survey$promise_mostImport_s)]
+Survey$promise_mostImport_s[!is.na(Survey$promise_mostImport_d) & !is.na(Survey$promise_mostImport_s)]
+# surprisingly, 4 respondents have non-missing values for both the treatment and control condition, which should not be possible given the survey design. We will remove these respondents from the dataset.
+Survey <- Survey[!( !is.na(Survey$promise_mostImport_d) & !is.na(Survey$promise_mostImport_s) ),]
+Survey <- Survey[!( is.na(Survey$promise_mostImport_d) & is.na(Survey$promise_mostImport_s) ),]
+Survey <- Survey[!is.na(Survey$promise_party),]
+Survey$treatment <- NA_integer_
+Survey$treatment[!is.na(Survey$promise_mostImport_d)] <- 1
+Survey$treatment[!is.na(Survey$promise_mostImport_s)] <- 0
+Survey$treatment <- factor(
+  ifelse(Survey$treatment == 1, "Treatment", "Control"),
+  levels = c("Treatment", "Control")
+)
+table(Survey$treatment, useNA = "always")
+
+### Party that made the recalled pledge ####
+table(Survey$promise_party, useNA = "always")
+Survey$promise_liberal <- factor(
+  ifelse(Survey$promise_party == 1, "Liberal", "Other"),
+  levels = c("Liberal", "Other")
+)
+table(Survey$promise_liberal, useNA = "always")
+Survey$promise_party <- factor(as.numeric(Survey$promise_party), levels = seq(1, 7),
+  labels = c("Liberal", "Conservative", "NDP", "Bloc", "Green", "People's", "Other")
+)
+table(Survey$promise_party, useNA = "always")
+
+### Mediating variable: Recall of a sovereignty-related pledge ####
+table(Survey$promise_number, useNA = "always")
+Survey <- left_join(Survey, DataForJoin, by = "promise_number")
+table(Survey$political_party, Survey$promise_party, useNA = "always")
+na.omit(Survey$promise_number[Survey$political_party == "NPD" & Survey$promise_party == "Conservative"])
+na.omit(Survey$promise_number[Survey$political_party == "Conservateur" & Survey$promise_party == "Liberal"])
+
+## Liberal Party identification ####
+table(Survey$fed_pid, useNA = "always")
+Survey$pid_liberal <- factor(
+  ifelse(Survey$fed_pid == 1, "Liberal", "Other"),
+  levels = c("Liberal", "Other")
+)
+table(Survey$pid_liberal, useNA = "always")
+Survey$pid_party <- factor(as.numeric(Survey$fed_pid), levels = seq(1, 7),
+  labels = c("Liberal", "Conservative", "NDP", "Bloc", "Green", "Other", "None")
+)
+table(Survey$pid_party, useNA = "always")
+
+## Importance of culture and nationalism ####
+table(Survey$issue_importanceSlid_6, useNA = "always")
+class(Survey$issue_importanceSlid_6)
+Survey$importance_culture <- as.integer(Survey$issue_importanceSlid_6) - 1
+table(Survey$importance_culture, useNA = "always")
+
 ## Age ####
 table(Survey$ses_age, useNA = "always")
 Survey$ses_age <- as.integer(Survey$ses_age)
