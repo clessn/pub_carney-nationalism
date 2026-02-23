@@ -2,27 +2,49 @@
 pacman::p_load(tidyverse, anesrake, openxlsx)
 Survey <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/Survey_Questionnaire_With_Coding.xlsx")
 Survey <- Survey[3:nrow(Survey),]
-DataForJoin <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/OppositionPartyPledges.xlsx")
+OppositionPartyPledges <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/OppositionPartyPledges.xlsx")
+GovernmentPartyPledges <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/PolimètreCarney_2026-02-16.xlsx", 2)
 Census21 <- read.csv("_SharedFolder_carney-nationalism/_data/Census2021_ind.csv")
 
 # Clean and rename ####
-## Experimental treatment: Recall of a pledge ####
+## Experimental treatment ####
 table(Survey$promise_party, useNA = "always")
 table(!is.na(Survey$promise_mostImport_d), !is.na(Survey$promise_mostImport_s), useNA = "always")
 Survey$promise_mostImport_d[!is.na(Survey$promise_mostImport_d) & !is.na(Survey$promise_mostImport_s)]
 Survey$promise_mostImport_s[!is.na(Survey$promise_mostImport_d) & !is.na(Survey$promise_mostImport_s)]
-# surprisingly, 4 respondents have non-missing values for both the treatment and control condition, which should not be possible given the survey design. We will remove these respondents from the dataset.
+# surprisingly, 4 respondents have non-missing values for both the treatment and control condition
+# # which should not be possible given the survey design. We will remove these respondents from the dataset.
 Survey <- Survey[!( !is.na(Survey$promise_mostImport_d) & !is.na(Survey$promise_mostImport_s) ),]
 Survey <- Survey[!( is.na(Survey$promise_mostImport_d) & is.na(Survey$promise_mostImport_s) ),]
 Survey <- Survey[!is.na(Survey$promise_party),]
 Survey$treatment <- NA_integer_
-Survey$treatment[!is.na(Survey$promise_mostImport_d)] <- 1
-Survey$treatment[!is.na(Survey$promise_mostImport_s)] <- 0
+Survey$treatment[!is.na(Survey$promise_mostImport_d)] <- 1 # description provided
+Survey$treatment[!is.na(Survey$promise_mostImport_s)] <- 0 # no description of a pledge provided
 Survey$treatment <- factor(
   ifelse(Survey$treatment == 1, "Treatment", "Control"),
-  levels = c("Treatment", "Control")
+  levels = c("Control", "Treatment")
 )
 table(Survey$treatment, useNA = "always")
+
+### Joining datasets with pledge information ####
+table(Survey$promise_number, useNA = "always")
+# 622 non-responses (25%), 250 hallucinated/not in platform (10%), 643 larger-than-promises (26%), and 978 actual promises (39%)
+Survey <- left_join(Survey, OppositionPartyPledges, by = "promise_number")
+table(Survey$political_party, useNA = "always")
+class(Survey$political_party)
+table(is.na(Survey$label_fr), useNA = "always")
+table(is.na(Survey$label_en), useNA = "always")
+GovernmentPartyPledges <- GovernmentPartyPledges |>
+  select(Numéro, Libellé.FR, Libellé.EN)
+GovernmentPartyPledges$political_party <- "Libéral"
+Survey <- left_join(Survey, GovernmentPartyPledges, by = c("promise_number" = "Numéro"))
+Survey$political_party <- Survey$political_party.x
+Survey$political_party[!is.na(Survey$political_party.y)] <- Survey$political_party.y[!is.na(Survey$political_party.y)]
+table(Survey$political_party, useNA = "always")
+Survey$label_fr[!is.na(Survey$Libellé.FR)] <- Survey$Libellé.FR[!is.na(Survey$Libellé.FR)]
+Survey$label_en[!is.na(Survey$Libellé.EN)] <- Survey$Libellé.EN[!is.na(Survey$Libellé.EN)]
+table(is.na(Survey$label_fr), useNA = "always")
+table(is.na(Survey$label_en), useNA = "always")
 
 ### Party that made the recalled pledge ####
 table(Survey$promise_party, useNA = "always")
@@ -35,13 +57,32 @@ Survey$promise_party <- factor(as.numeric(Survey$promise_party), levels = seq(1,
   labels = c("Liberal", "Conservative", "NDP", "Bloc", "Green", "People's", "Other")
 )
 table(Survey$promise_party, useNA = "always")
+table(Survey$political_party, Survey$promise_party, useNA = "always")
+
+### Recall of a pledge ####
+Survey$actual_pledge_recalled <- "Actual pledge recalled"
+Survey$actual_pledge_recalled[!(Survey$promise_number %in% c("0.0.0", "0.0.0.0", "0.0.0.0.0", "0.0.0.0.0.0"))] <- "No actual pledge recalled"
+Survey$actual_pledge_recalled[Survey$promise_number == "0.0.0"] <- "Don't know / Refused to answer"
+Survey$actual_pledge_recalled <- as.factor(Survey$actual_pledge_recalled)
+table(Survey$actual_pledge_recalled, useNA = "always")
 
 ### Mediating variable: Recall of a sovereignty-related pledge ####
-table(Survey$promise_number, useNA = "always")
-Survey <- left_join(Survey, DataForJoin, by = "promise_number")
-table(Survey$political_party, Survey$promise_party, useNA = "always")
-#na.omit(Survey$promise_number[Survey$political_party == "NPD" & Survey$promise_party == "Conservative"])
-#na.omit(Survey$promise_number[Survey$political_party == "Conservateur" & Survey$promise_party == "Liberal"])
+table(Survey$sov_y_n, useNA = "always")
+Survey$sovereigntyrelated <- 0
+Survey$sovereigntyrelated[Survey$sov_y_n == 1] <- 1
+Survey$sovereigntyrelated[Survey$promise_number == "0.0.0.0.0.0"] <- 1
+Survey$sovereigntyrelated <- factor(
+  ifelse(Survey$sovereigntyrelated == 1, "Sovereignty-related", "Non-sovereignty-related"),
+  levels = c("Sovereignty-related", "Non-sovereignty-related")
+)
+table(Survey$sovereigntyrelated, useNA = "always")
+Survey$sovereigntyrelatedpledge <- 0
+Survey$sovereigntyrelatedpledge[Survey$sov_y_n == 1] <- 1
+Survey$sovereigntyrelatedpledge <- factor(
+  ifelse(Survey$sovereigntyrelatedpledge == 1, "Sovereignty-related pledge recalled", "No recall / Non-sovereignty-related"),
+  levels = c("Sovereignty-related pledge recalled", "No recall / Non-sovereignty-related")
+)
+table(Survey$sovereigntyrelatedpledge, useNA = "always")
 
 ## Liberal Party identification ####
 table(Survey$fed_pid, useNA = "always")
@@ -51,7 +92,7 @@ Survey$pid_liberal <- factor(
 )
 table(Survey$pid_liberal, useNA = "always")
 Survey$pid_party <- factor(as.numeric(Survey$fed_pid), levels = seq(1, 7),
-  labels = c("Liberal", "Conservative", "NDP", "Bloc", "Green", "Other", "None")
+  labels = c("Liberal", "Conservative", "NDP", "Green", "Bloc", "Other", "None")
 )
 table(Survey$pid_party, useNA = "always")
 
@@ -226,63 +267,53 @@ summary(Survey$weights)
 #Survey$valid <- Survey[Survey$weights > 0.5]
 hist(Survey$weights)
 ((sum(Survey$weights^2) / (sum(Survey$weights))^2) * length(Survey$income)) - 1 # calculate weighting loss (design effect)
-#wpct(Survey$pid_liberal)
-#wpct(Survey$pid_liberal, Survey$weights)
+unweighted <-  wpct(Survey$pid_party)
+weighted  <-  wpct(Survey$pid_party, Survey$weights)
+data.frame(unweighted, weighted)
 
 # Results ####
 ## H1: Liberal voters more likely to cite sovereignty/defense pledges and less likely to be unable to recall a promise. ####
-# créer la variable promise_type en détectant une colonne indiquant la souveraineté
-sovereignty_col <- names(Survey)[grepl("sovereign|sov|souverain|sovereignty", names(Survey), ignore.case = TRUE)][1]
-if (is.na(sovereignty_col)) {
-  stop("Aucune colonne indiquant la souveraineté trouvée dans Survey. Joignez ou renommez la colonne correspondante dans DataForJoin.")
-}
-
-Survey <- Survey |>
-  mutate(
-    promise_type = dplyr::case_when(
-      is.na(promise_number) ~ "Impossible de se rappeler",
-      as.character(.data[[sovereignty_col]]) %in% c("1", "Yes", "yes", "Y", "y", "TRUE", "T") ~ "Souveraineté",
-      TRUE ~ "Non-souveraineté"
-    ),
-    promise_type = factor(promise_type, levels = c("Souveraineté", "Non-souveraineté", "Impossible de se rappeler"))
-  )
-
-# calcul des parts pondérées par pid_liberal
-df_plot <- Survey |>
-  filter(!is.na(pid_liberal)) |>
-  group_by(pid_liberal, promise_type) |>
-  summarize(w = sum(weights, na.rm = TRUE), .groups = "drop") |>
-  group_by(pid_liberal) |>
-  mutate(share = w / sum(w)) |>
+# Plot party ID by recall of sovereignty-related pledge (weighted and unweighted)
+table(Survey$pid_party, useNA = "always")
+table(Survey$sovereigntyrelatedpledge, useNA = "always")
+PartyRecallSovereigntyPlotWeighted <- Survey |>
+  filter(!is.na(pid_party), !is.na(sovereigntyrelatedpledge), !is.na(weights)) |>
+  group_by(pid_party, sovereigntyrelatedpledge) |>
+  dplyr::summarize(number = sum(weights, na.rm = TRUE), .groups = "drop") |>
   ungroup()
-
-# graphique à barres groupées
-library(ggplot2)
-
-p <- ggplot(df_plot, aes(x = pid_liberal, y = share, fill = promise_type)) +
+ggplot(PartyRecallSovereigntyPlotWeighted, aes(x = pid_party, y = number, fill = sovereigntyrelatedpledge)) +
   geom_col(position = position_dodge(width = 0.75), width = 0.7) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous() +
   labs(
-    x = "Identification partisane",
-    y = "Part (%) (pondérée)",
-    fill = "Type de promesse",
-    title = "Types de promesses identifiées selon identification libérale vs autres"
+    x = "Party identification",
+    y = "Number of respondents (weighted)",
+    fill = "Promise type"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  theme(legend.position = "bottom")
+ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlotWeighted.png", width = 8, height = 5)
 
-p
+PartyRecallSovereigntyPlot <- Survey |>
+  filter(!is.na(pid_party)) |>
+  group_by(pid_party, sovereigntyrelatedpledge) |>
+  dplyr::summarize(number = n())
+ggplot(PartyRecallSovereigntyPlot, aes(x = pid_party, y = number, fill = sovereigntyrelatedpledge)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
+  scale_y_continuous() +
+  labs(
+    x = "Party identification",
+    y = "Number of respondents",
+    fill = "Promise type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlot.png", width = 8, height = 5)
 
 ## H2: Pledge-definition treatment increases pledge recall. ####
-# créer variable binaire (1 = a nommé une vraie promesse)
-df_h2 <- Survey |>
-  filter(!is.na(treatment), !is.na(weights)) |>
-  mutate(
-    recalled = ifelse(is.na(promise_type) | promise_type == "Impossible de se rappeler", 0L, 1L)
-  )
-
 # ajuster un logit pondéré recalled ~ treatment
-fit_h2 <- glm(recalled ~ treatment, family = binomial(), data = df_h2, weights = weights)
-
+ModelRecallTreatment <- glm(actual_pledge_recalled ~ treatment, family = binomial(), data = Survey, weights = Survey$weights)
+summary(ModelRecallTreatment)
+Survey$actual_pledge_recalled
 # prédictions sur l'échelle du lien (logit) puis transformation et IC 95 %
 newdata <- tibble(treatment = factor(c("Treatment", "Control"), levels = levels(df_h2$treatment)))
 pred <- predict(fit_h2, newdata = newdata, se.fit = TRUE, type = "link")
