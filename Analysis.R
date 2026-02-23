@@ -40,8 +40,8 @@ table(Survey$promise_party, useNA = "always")
 table(Survey$promise_number, useNA = "always")
 Survey <- left_join(Survey, DataForJoin, by = "promise_number")
 table(Survey$political_party, Survey$promise_party, useNA = "always")
-na.omit(Survey$promise_number[Survey$political_party == "NPD" & Survey$promise_party == "Conservative"])
-na.omit(Survey$promise_number[Survey$political_party == "Conservateur" & Survey$promise_party == "Liberal"])
+#na.omit(Survey$promise_number[Survey$political_party == "NPD" & Survey$promise_party == "Conservative"])
+#na.omit(Survey$promise_number[Survey$political_party == "Conservateur" & Survey$promise_party == "Liberal"])
 
 ## Liberal Party identification ####
 table(Survey$fed_pid, useNA = "always")
@@ -65,8 +65,8 @@ table(Survey$importance_culture, useNA = "always")
 table(Survey$ses_age, useNA = "always")
 Survey$ses_age <- as.integer(Survey$ses_age)
 Survey$age <- NA_integer_
-Survey$age[Survey$ses_age %in% c(18, 34)] <- 1 # 18-34
-Survey$age[Survey$ses_age %in% c(35, 54)] <- 2 # 35-54
+Survey$age[Survey$ses_age %in% seq(18, 34)] <- 1 # 18-34
+Survey$age[Survey$ses_age %in% seq(35, 54)] <- 2 # 35-54
 Survey$age[Survey$ses_age >= 55] <- 3 # 55+
 Survey$age <- factor(
   ifelse(Survey$age == 1, "18–34",
@@ -228,3 +228,170 @@ hist(Survey$weights)
 ((sum(Survey$weights^2) / (sum(Survey$weights))^2) * length(Survey$income)) - 1 # calculate weighting loss (design effect)
 #wpct(Survey$pid_liberal)
 #wpct(Survey$pid_liberal, Survey$weights)
+
+# Results ####
+## H1: Liberal voters more likely to cite sovereignty/defense pledges and less likely to be unable to recall a promise. ####
+# créer la variable promise_type en détectant une colonne indiquant la souveraineté
+sovereignty_col <- names(Survey)[grepl("sovereign|sov|souverain|sovereignty", names(Survey), ignore.case = TRUE)][1]
+if (is.na(sovereignty_col)) {
+  stop("Aucune colonne indiquant la souveraineté trouvée dans Survey. Joignez ou renommez la colonne correspondante dans DataForJoin.")
+}
+
+Survey <- Survey |>
+  mutate(
+    promise_type = dplyr::case_when(
+      is.na(promise_number) ~ "Impossible de se rappeler",
+      as.character(.data[[sovereignty_col]]) %in% c("1", "Yes", "yes", "Y", "y", "TRUE", "T") ~ "Souveraineté",
+      TRUE ~ "Non-souveraineté"
+    ),
+    promise_type = factor(promise_type, levels = c("Souveraineté", "Non-souveraineté", "Impossible de se rappeler"))
+  )
+
+# calcul des parts pondérées par pid_liberal
+df_plot <- Survey |>
+  filter(!is.na(pid_liberal)) |>
+  group_by(pid_liberal, promise_type) |>
+  summarize(w = sum(weights, na.rm = TRUE), .groups = "drop") |>
+  group_by(pid_liberal) |>
+  mutate(share = w / sum(w)) |>
+  ungroup()
+
+# graphique à barres groupées
+library(ggplot2)
+
+p <- ggplot(df_plot, aes(x = pid_liberal, y = share, fill = promise_type)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    x = "Identification partisane",
+    y = "Part (%) (pondérée)",
+    fill = "Type de promesse",
+    title = "Types de promesses identifiées selon identification libérale vs autres"
+  ) +
+  theme_minimal()
+
+p
+
+## H2: Pledge-definition treatment increases pledge recall. ####
+# créer variable binaire (1 = a nommé une vraie promesse)
+df_h2 <- Survey |>
+  filter(!is.na(treatment), !is.na(weights)) |>
+  mutate(
+    recalled = ifelse(is.na(promise_type) | promise_type == "Impossible de se rappeler", 0L, 1L)
+  )
+
+# ajuster un logit pondéré recalled ~ treatment
+fit_h2 <- glm(recalled ~ treatment, family = binomial(), data = df_h2, weights = weights)
+
+# prédictions sur l'échelle du lien (logit) puis transformation et IC 95 %
+newdata <- tibble(treatment = factor(c("Treatment", "Control"), levels = levels(df_h2$treatment)))
+pred <- predict(fit_h2, newdata = newdata, se.fit = TRUE, type = "link")
+est <- plogis(pred$fit)
+se <- pred$se.fit
+lower <- plogis(pred$fit - 1.96 * se)
+upper <- plogis(pred$fit + 1.96 * se)
+
+df_plot_h2 <- newdata |>
+  mutate(
+    estimate = est,
+    lower = lower,
+    upper = upper
+  )
+
+# graphique : barres avec IC 95 %
+library(ggplot2)
+
+p_h2 <- ggplot(df_plot_h2, aes(x = treatment, y = estimate, fill = treatment)) +
+  geom_col(width = 0.6, show.legend = FALSE) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, size = 0.8) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
+  labs(
+    x = "Condition expérimentale",
+    y = "Part (%) ayant nommé une vraie promesse (pondérée)",
+    title = "Effet du traitement sur le rappel d'une vraie promesse",
+    subtitle = "Estimations et intervalles de confiance à 95 % (modèle logit pondéré)"
+  ) +
+  theme_minimal()
+
+p_h2
+
+## H3: Perceived importance of culture and nationalism mediates the relationship between sovereignty-pledge recognition and Liberal support. ####
+# Ajustements de modèles pour H3 et tableau de régression
+library(broom)
+
+# Préparer les données (retenir observations complètes pour variables d'intérêt)
+df_h3 <- Survey |>
+  mutate(
+    pid_lib_bin = ifelse(pid_liberal == "Liberal", 1L, 0L)
+  ) |>
+  filter(
+    !is.na(pid_lib_bin),
+    !is.na(promise_type),
+    !is.na(importance_culture),
+    !is.na(education),
+    !is.na(language),
+    !is.na(province),
+    !is.na(age),
+    !is.na(gender),
+    !is.na(weights)
+  )
+
+# Modèle 1: effet total (pid ~ promise_type + controles)
+model_total <- glm(
+  pid_lib_bin ~ promise_type + education + language + province + age + gender,
+  family = binomial(),
+  data = df_h3,
+  weights = weights
+)
+
+# Modèle du médiateur: importance_culture ~ promise_type + controles (lm pondéré)
+mediator_model <- lm(
+  importance_culture ~ promise_type + education + language + province + age + gender,
+  data = df_h3,
+  weights = weights
+)
+
+# Modèle 3: outcome contrôlé pour le médiateur (pid ~ promise_type + importance_culture + controles)
+model_with_med <- glm(
+  pid_lib_bin ~ promise_type + importance_culture + education + language + province + age + gender,
+  family = binomial(),
+  data = df_h3,
+  weights = weights
+)
+
+# Fonction utilitaire pour tidy + CI; ajoute OR pour modèles logit
+tidy_with_extras <- function(mod, name) {
+  td <- broom::tidy(mod, conf.int = TRUE)
+  td <- td |> mutate(model = name, term = term)
+  if (inherits(mod, "glm") && family(mod)$family == "binomial") {
+    td <- td |> mutate(
+      OR = exp(estimate),
+      OR_conf.low = exp(conf.low),
+      OR_conf.high = exp(conf.high)
+    )
+  } else {
+    td <- td |> mutate(OR = NA_real_, OR_conf.low = NA_real_, OR_conf.high = NA_real_)
+  }
+  td |> select(model, term, estimate, std.error, conf.low, conf.high, OR, OR_conf.low, OR_conf.high, p.value)
+}
+
+# Construire tableau combiné
+reg_table <- bind_rows(
+  tidy_with_extras(model_total, "Total effect (no mediator)"),
+  tidy_with_extras(mediator_model, "Mediator (importance_culture)"),
+  tidy_with_extras(model_with_med, "Outcome with mediator")
+) |>
+  arrange(model, term)
+
+# Renvoyer les modèles et le tableau (objet utile en sortie)
+reg_results <- list(
+  models = list(
+    model_total = model_total,
+    mediator_model = mediator_model,
+    model_with_med = model_with_med
+  ),
+  table = reg_table,
+  data_used = df_h3
+)
+
+reg_results
