@@ -28,6 +28,8 @@ table(Survey$treatment, useNA = "always")
 
 ### Joining datasets with pledge information ####
 table(Survey$promise_number, useNA = "always")
+table(Survey$X85, useNA = "always") # 40 respondents identified a second pledge accurately
+table(Survey$X86, useNA = "always") # no third promise
 # 622 non-responses (25%), 250 hallucinated/not in platform (10%), 643 larger-than-promises (26%), and 978 actual promises (39%)
 Survey <- left_join(Survey, OppositionPartyPledges, by = "promise_number")
 table(Survey$political_party, useNA = "always")
@@ -35,7 +37,7 @@ class(Survey$political_party)
 table(is.na(Survey$label_fr), useNA = "always")
 table(is.na(Survey$label_en), useNA = "always")
 GovernmentPartyPledges <- GovernmentPartyPledges |>
-  select(Numéro, Libellé.FR, Libellé.EN)
+  select(Numéro, Libellé.FR, Libellé.EN, sov_y_n)
 GovernmentPartyPledges$political_party <- "Libéral"
 Survey <- left_join(Survey, GovernmentPartyPledges, by = c("promise_number" = "Numéro"))
 Survey$political_party <- Survey$political_party.x
@@ -67,6 +69,10 @@ Survey$actual_pledge_recalled <- as.factor(Survey$actual_pledge_recalled)
 table(Survey$actual_pledge_recalled, useNA = "always")
 
 ### Mediating variable: Recall of a sovereignty-related pledge ####
+table(Survey$sov_y_n.x, useNA = "always")
+table(Survey$sov_y_n.y, useNA = "always")
+Survey$sov_y_n <- Survey$sov_y_n.x
+Survey$sov_y_n[is.na(Survey$sov_y_n.x)] <- Survey$sov_y_n.y[is.na(Survey$sov_y_n.x)]
 table(Survey$sov_y_n, useNA = "always")
 Survey$sovereigntyrelated <- 0
 Survey$sovereigntyrelated[Survey$sov_y_n == 1] <- 1
