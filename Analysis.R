@@ -1,5 +1,5 @@
 # Load packages and datasets ####
-pacman::p_load(tidyverse, anesrake, openxlsx)
+pacman::p_load(tidyverse, anesrake, openxlsx, survey, modelsummary, flextable)
 Survey <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/Survey_Questionnaire_With_Coding.xlsx")
 Survey <- Survey[3:nrow(Survey),]
 OppositionPartyPledges <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/OppositionPartyPledges.xlsx")
@@ -30,7 +30,7 @@ table(Survey$treatment, useNA = "always")
 table(Survey$promise_number, useNA = "always")
 table(Survey$X85, useNA = "always") # 40 respondents identified a second pledge accurately
 table(Survey$X86, useNA = "always") # no third promise
-# 622 non-responses (25%), 250 hallucinated/not in platform (10%), 643 larger-than-promises (26%), and 978 actual promises (39%)
+# 622 non-responses (25%), 250 not in platform (10%), 643 broader-than-promises (26%), and 978 actual promises (39%)
 Survey <- left_join(Survey, OppositionPartyPledges, by = "promise_number")
 table(Survey$political_party, useNA = "always")
 class(Survey$political_party)
@@ -69,11 +69,11 @@ table(Survey$actual_pledge_recalled, useNA = "always")
 
 Survey$quality_of_recall <- NA
 Survey$quality_of_recall[Survey$promise_number == "0.0.0"] <- "Don't know / Refused to answer"
-Survey$quality_of_recall[Survey$promise_number == "0.0.0.0"] <- "Hallucinated / Not in platform"
-Survey$quality_of_recall[Survey$promise_number %in% c("0.0.0.0.0", "0.0.0.0.0.0")] <- "Larger than actual pledge"
+Survey$quality_of_recall[Survey$promise_number == "0.0.0.0"] <- "Pledge not found in party platform"
+Survey$quality_of_recall[Survey$promise_number %in% c("0.0.0.0.0", "0.0.0.0.0.0")] <- "Too broad to be a pledge"
 Survey$quality_of_recall[Survey$actual_pledge_recalled == "Actual pledge recalled"] <- "Actual pledge recalled"
 Survey$quality_of_recall <- factor(Survey$quality_of_recall,
-  levels = c("Don't know / Refused to answer", "Hallucinated / Not in platform", "Larger than actual pledge", "Actual pledge recalled")
+  levels = c("Don't know / Refused to answer", "Pledge not found in party platform", "Too broad to be a pledge", "Actual pledge recalled")
 )
 table(Survey$quality_of_recall, useNA = "always")
 
@@ -340,7 +340,7 @@ PartyRecallSovereigntyPlotWeightedStats <- Survey |>
 ggplot(PartyRecallSovereigntyPlotWeightedStats, aes(x = pid_party, y = p100)) +
   geom_errorbar(aes(ymin = lower, ymax = upper),
    position = position_dodge(width = 0.75), width = 0.2, size = 0.8) +
-  geom_point(data = points_df, aes(x = pid_party, y = p100),
+  geom_point(aes(x = pid_party, y = p100),
    position = position_dodge(width = 0.75), size = 3, inherit.aes = FALSE) +
   scale_y_continuous() +
   labs(x = "Party identification",
@@ -350,85 +350,96 @@ ggplot(PartyRecallSovereigntyPlotWeightedStats, aes(x = pid_party, y = p100)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlotWeighted.png", width = 5.5, height = 4.25)
 sum(PartyRecallSovereigntyPlotWeightedStats$total_w)
+sum(PartyRecallSovereigntyPlotWeightedStats$sub_w)
+sum(PartyRecallSovereigntyPlotWeightedStats$sum_w2)
 
-# plot with dodged bars and error bars
-posd <- position_dodge(width = 0.75)
-ggplot(PartyRecallSovereigntyPlotWeightedStats,
-  aes(x = pid_party, y = p100, fill = sovereigntyrelatedpledge)) +
-  geom_col(position = posd, width = 0.7) +
-  geom_errorbar(aes(ymin = lower, ymax = upper), position = posd, width = 0.2, size = 0.8) +
-  scale_fill_discrete(labels = wrap_two_lines) +
-  scale_y_continuous() +
-  labs(
-    x = "Party identification",
-    y = "Share of respondents (weighted %)",
-    fill = "Promise type"
-  ) +
-  geom_hline(yintercept = 50, linetype = "dashed") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# add weights to this plot
+# compute weighted shares and 95% CIs, then plot (returns ggplot object)
+df <- Survey |>
+  filter(!is.na(quality_of_recall), !is.na(weights))
 
-ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlotWeighted.png", width = 5.5, height = 4.25)
+overall_total <- sum(df$weights, na.rm = TRUE)
+sum_w2_total  <- sum(df$weights^2, na.rm = TRUE)
+neff_total    <- (overall_total^2) / sum_w2_total
 
-PartyRecallSovereigntyPlot <- Survey |>
-  filter(!is.na(pid_party), !is.na(sovereigntyrelatedpledge)) |>
-  group_by(pid_party, sovereigntyrelatedpledge) |>
-  dplyr::summarize(number = n())
-ggplot(PartyRecallSovereigntyPlot, aes(x = pid_party, y = number, fill = sovereigntyrelatedpledge)) +
-  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
-  scale_fill_discrete(labels = wrap_two_lines) +
-  scale_y_continuous() +
-  labs(
-    x = "Party identification",
-    y = "Number of respondents",
-    fill = "Promise type"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlot.png", width = 5.5, height = 4.25)
-
-ggplot(Survey, aes(x = quality_of_recall)) +
-  geom_bar() +
-  labs(
-    x = "Quality of recall",
-    y = "Number of respondents"
-  ) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("_SharedFolder_carney-nationalism/_graph/QualityOfRecall.png", width = 5.5, height = 4.25)
-
-## H2: Pledge-definition treatment increases pledge recall. ####
-# weighted logit recalled ~ treatment
-table(Survey$actual_pledge_recalled, useNA = "always")
-ModelRecallTreatment <- glm(actual_pledge_recalled ~ treatment, family = binomial(), data = Survey, weights = Survey$weights)
-summary(ModelRecallTreatment)
-
-# predictions
-newdata <- tibble(treatment = factor(c("Treatment", "Control"), levels = levels(Survey$treatment)))
-pred <- predict(ModelRecallTreatment, newdata = newdata, se.fit = TRUE, type = "link")
-est <- plogis(pred$fit)
-se <- pred$se.fit
-lower <- plogis(pred$fit - qnorm(0.975) * se)
-upper <- plogis(pred$fit + qnorm(0.975) * se)
-H2Plot <- newdata |>
+QualityOfRecallWeightedStats <- df |>
+  group_by(quality_of_recall) |>
+  dplyr::summarize(
+    sub_w = sum(weights, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
   mutate(
-    estimate = est,
-    lower = lower,
-    upper = upper
+    p = sub_w / overall_total,
+    se = sqrt(p * (1 - p) / neff_total),
+    p100 = p * 100,
+    se100 = se * 100,
+    lower = pmax(0, p100 - 1.96 * se100),
+    upper = pmin(100, p100 + 1.96 * se100)
   )
 
-# plot for H2
-ggplot(H2Plot, aes(x = treatment, y = estimate, fill = treatment)) +
-  geom_col(width = 0.6, show.legend = FALSE) +
+ggplot(QualityOfRecallWeightedStats, aes(x = quality_of_recall, y = p100)) +
+  geom_point(size = 3) +
   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, size = 0.8) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
+  scale_y_continuous() +
+  geom_hline(yintercept = 50, linetype = "dashed") +
   labs(
-    x = "Experimental condition",
-    y = "Estimated probability of recalling an actual pledge"
+    x = "Quality of recall",
+    y = "Weighted share of\nrespondents (%)"
   ) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("_SharedFolder_carney-nationalism/_graph/H2Plot.png", width = 5.5, height = 4.25)
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ggsave("_SharedFolder_carney-nationalism/_graph/QualityOfRecallWeighted.png", width = 5.5, height = 4.25)
+sum(QualityOfRecallWeightedStats$sub_w)
+
+## H2: Pledge-definition treatment increases pledge recall. ####
+# weighted t-test recalled ~ treatment
+df_h2 <- Survey |>
+  filter(!is.na(treatment), !is.na(actual_pledge_recalled), !is.na(weights)) |>
+  mutate(
+    recalled_num = as.numeric(actual_pledge_recalled == "Actual pledge recalled")
+  )
+
+design_h2 <- svydesign(ids = ~1, weights = ~weights, data = df_h2)
+
+group_means_h2 <- svyby(
+  ~recalled_num,
+  ~treatment,
+  design_h2,
+  svymean,
+  vartype = c("se", "ci"),
+  level = 0.95,
+  na.rm = TRUE
+) |>
+  as_tibble() |>
+  rename(mean = recalled_num, se = se, lower = ci_l, upper = ci_u) |>
+  mutate(across(c(mean, lower, upper), ~ .x * 100)) # percent scale
+
+ttest_h2 <- svyttest(recalled_num ~ treatment, design = design_h2)
+
+ttest_h2_tidy <- tibble(
+  estimate_diff = as.numeric(ttest_h2$estimate), # difference in means (Treatment - Control)
+  statistic = as.numeric(ttest_h2$statistic),
+  parameter = as.numeric(ttest_h2$parameter),
+  p_value = as.numeric(ttest_h2$p.value)
+)
+
+list(
+  design = design_h2,
+  group_means = group_means_h2,
+  ttest = ttest_h2_tidy
+)
+# plot group means with 95% CIs
+ggplot(group_means_h2, aes(x = treatment, y = mean)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, size = 0.8) +
+  scale_y_continuous(limits = c(0, 100)) +
+  geom_hline(yintercept = 50, linetype = "dashed") +
+  labs(
+    x = "Treatment condition",
+    y = "Weighted share of respondents who\nrecalled an actual pledge (%)"
+  ) +
+  theme_minimal()
+ggsave("_SharedFolder_carney-nationalism/_graph/H2_PledgeRecallTreatmentEffect.png", width = 5.5, height = 4.25)
 
 ## H3: Perceived importance of culture and nationalism mediates the relationship between sovereignty-pledge recognition and Liberal support. ####
 # Model: total effect (pid ~ sovereigntyrelatedpledgeoranything + controls)
