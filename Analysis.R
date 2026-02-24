@@ -64,7 +64,6 @@ table(Survey$political_party, Survey$promise_party, useNA = "always")
 ### Recall of a pledge ####
 Survey$actual_pledge_recalled <- "Actual pledge recalled"
 Survey$actual_pledge_recalled[Survey$promise_number %in% c("0.0.0", "0.0.0.0", "0.0.0.0.0", "0.0.0.0.0.0")] <- "No actual pledge recalled"
-Survey$actual_pledge_recalled[Survey$promise_number == "0.0.0"] <- NA
 Survey$actual_pledge_recalled <- as.factor(Survey$actual_pledge_recalled)
 table(Survey$actual_pledge_recalled, useNA = "always")
 
@@ -100,12 +99,19 @@ Survey$sovereigntyrelatedpledge <- factor(
   levels = c("Non-sovereignty-related pledge recalled", "Sovereignty-related pledge recalled")
 )
 table(Survey$sovereigntyrelatedpledge, useNA = "always")
+Survey$sovereigntyrelatedpledgeoranything <- 0
+Survey$sovereigntyrelatedpledgeoranything[Survey$sov_y_n == 1] <- 1
+Survey$sovereigntyrelatedpledgeoranything <- factor(
+  ifelse(Survey$sovereigntyrelatedpledgeoranything == 1, "Sovereignty-related pledge recalled", "Other answer"),
+  levels = c("Other answer", "Sovereignty-related pledge recalled")
+)
+table(Survey$sovereigntyrelatedpledgeoranything, useNA = "always")
 
 ## Liberal Party identification ####
 table(Survey$fed_pid, useNA = "always")
 Survey$pid_liberal <- factor(
   ifelse(Survey$fed_pid == 1, "Liberal", "Other"),
-  levels = c("Liberal", "Other")
+  levels = c("Other", "Liberal")
 )
 table(Survey$pid_liberal, useNA = "always")
 Survey$pid_party <- factor(as.numeric(Survey$fed_pid), levels = seq(1, 7),
@@ -293,11 +299,7 @@ data.frame(unweighted, weighted)
 # Plot party ID by recall of sovereignty-related pledge (weighted and unweighted)
 table(Survey$pid_party, useNA = "always")
 table(Survey$sovereigntyrelatedpledge, useNA = "always")
-PartyRecallSovereigntyPlotWeighted <- Survey |>
-  filter(!is.na(pid_party), !is.na(sovereigntyrelatedpledge), !is.na(weights)) |>
-  group_by(pid_party, sovereigntyrelatedpledge) |>
-  dplyr::summarize(number = sum(weights, na.rm = TRUE), .groups = "drop") |>
-  ungroup()
+table(Survey$weights, useNA = "always")
 # wrap legend labels into (at most) two lines when > 15 chars, recreate + save weighted plot
 wrap_two_lines <- function(x, width = 15) {
   vapply(x, function(lbl) {
@@ -308,18 +310,64 @@ wrap_two_lines <- function(x, width = 15) {
     }
   }, FUN.VALUE = character(1))
 }
+# compute weighted shares and SE by party & pledge type
+PartyRecallSovereigntyPlotWeightedStats <- Survey |>
+  filter(!is.na(pid_party), !is.na(sovereigntyrelatedpledge)) |>
+  group_by(pid_party) |>
+  dplyr::summarize(
+    total_w = sum(weights, na.rm = TRUE),
+    sum_w2  = sum(weights^2, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  right_join(
+    Survey |>
+      filter(!is.na(pid_party), !is.na(sovereigntyrelatedpledge)) |>
+      group_by(pid_party, sovereigntyrelatedpledge) |>
+      dplyr::summarize(sub_w = sum(weights, na.rm = TRUE), .groups = "drop"),
+    by = "pid_party"
+  ) |>
+  mutate(
+    p = sub_w / total_w,
+    neff = (total_w^2) / sum_w2,
+    se = sqrt(p * (1 - p) / neff),
+    p100 = p * 100,
+    se100 = se * 100,
+    lower = pmax(0, p100 - 1.96 * se100),
+    upper = pmin(100, p100 + 1.96 * se100)
+  ) |>
+  dplyr::filter(sovereigntyrelatedpledge == "Sovereignty-related pledge recalled")
 
-ggplot(PartyRecallSovereigntyPlotWeighted, aes(x = pid_party, y = number, fill = sovereigntyrelatedpledge)) +
-  geom_col(position = position_dodge(width = 0.75), width = 0.7) +
+ggplot(PartyRecallSovereigntyPlotWeightedStats, aes(x = pid_party, y = p100)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper),
+   position = position_dodge(width = 0.75), width = 0.2, size = 0.8) +
+  geom_point(data = points_df, aes(x = pid_party, y = p100),
+   position = position_dodge(width = 0.75), size = 3, inherit.aes = FALSE) +
+  scale_y_continuous() +
+  labs(x = "Party identification",
+       y = "Weighted share of respondents who\ncited sovereignty-related pledges (%)") +
+  geom_hline(yintercept = 50, linetype = "dashed") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlotWeighted.png", width = 5.5, height = 4.25)
+sum(PartyRecallSovereigntyPlotWeightedStats$total_w)
+
+# plot with dodged bars and error bars
+posd <- position_dodge(width = 0.75)
+ggplot(PartyRecallSovereigntyPlotWeightedStats,
+  aes(x = pid_party, y = p100, fill = sovereigntyrelatedpledge)) +
+  geom_col(position = posd, width = 0.7) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), position = posd, width = 0.2, size = 0.8) +
   scale_fill_discrete(labels = wrap_two_lines) +
   scale_y_continuous() +
   labs(
     x = "Party identification",
-    y = "Number of respondents (weighted)",
+    y = "Share of respondents (weighted %)",
     fill = "Promise type"
   ) +
+  geom_hline(yintercept = 50, linetype = "dashed") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlotWeighted.png", width = 5.5, height = 4.25)
 
 PartyRecallSovereigntyPlot <- Survey |>
@@ -383,39 +431,35 @@ ggplot(H2Plot, aes(x = treatment, y = estimate, fill = treatment)) +
 ggsave("_SharedFolder_carney-nationalism/_graph/H2Plot.png", width = 5.5, height = 4.25)
 
 ## H3: Perceived importance of culture and nationalism mediates the relationship between sovereignty-pledge recognition and Liberal support. ####
-# Adjust models & prepare data for H3 regressions (keep only complete cases for relevant variables)
-H3Data <- Survey |>
-  mutate(
-    pid_lib_bin = ifelse(pid_liberal == "Liberal", 1L, 0L)
-  ) |>
-  filter(
-    !is.na(pid_lib_bin),
-    !is.na(sovereigntyrelatedpledge),
-    !is.na(importance_culture),
-    !is.na(education),
-    !is.na(language),
-    !is.na(province),
-    !is.na(age),
-    !is.na(gender),
-    !is.na(weights)
-  )
-
-# Model: total effect (pid ~ sovereigntyrelatedpledge + controls)
-ModelSovereigntyPID <- glm(pid_lib_bin ~ sovereigntyrelatedpledge + education + language + province + age + gender,
-  family = binomial(), data = H3Data, weights = weights)
+# Model: total effect (pid ~ sovereigntyrelatedpledgeoranything + controls)
+ModelSovereigntyPID <- glm(pid_liberal ~ sovereigntyrelatedpledgeoranything,
+  family = binomial(), data = Survey, weights = weights)
 summary(ModelSovereigntyPID)
 
-# Mediator model: importance_culture ~ sovereigntyrelatedpledge + controls (weighted lm)
+ModelSovereigntyPIDCtrl <- glm(pid_liberal ~ sovereigntyrelatedpledgeoranything + education + language + province + age + gender,
+  family = binomial(), data = Survey, weights = weights)
+summary(ModelSovereigntyPIDCtrl)
+
+# Mediator model: importance_culture ~ sovereigntyrelatedpledgeoranything + controls (weighted lm)
 ModelMediator <- lm(
-  importance_culture ~ sovereigntyrelatedpledge + education + language + province + age + gender,
-  data = H3Data, weights = weights)
+  importance_culture ~ sovereigntyrelatedpledgeoranything, data = Survey, weights = weights)
 summary(ModelMediator)
 
-# Model: outcome controlled for mediator (pid ~ sovereigntyrelatedpledge + importance_culture + controls)
+ModelMediatorCtrl <- lm(
+  importance_culture ~ sovereigntyrelatedpledgeoranything + education + language + province + age + gender,
+  data = Survey, weights = weights)
+summary(ModelMediatorCtrl)
+
+# Model: outcome controlled for mediator (pid ~ sovereigntyrelatedpledgeoranything + importance_culture + controls)
 ModelH3 <- glm(
-  pid_lib_bin ~ sovereigntyrelatedpledge + importance_culture + education + language + province + age + gender,
-  family = binomial(), data = H3Data, weights = weights)
+  pid_liberal ~ sovereigntyrelatedpledgeoranything + importance_culture,
+  family = binomial(), data = Survey, weights = weights)
 summary(ModelH3)
+
+ModelH3Ctrl <- glm(
+  pid_liberal ~ sovereigntyrelatedpledgeoranything + importance_culture + education + language + province + age + gender,
+  family = binomial(), data = Survey, weights = weights)
+summary(ModelH3Ctrl)
 
 # Display results with modelsummary and create a flextable from the three models and save as a Word document
 modelsummary::modelsummary(
@@ -430,9 +474,30 @@ modelsummary::modelsummary(
   stars = T,
   gof_omit = "AIC|BIC|Log.Lik|F|RMSE|Deviance|Num\\.obs\\.",
   notes = c("Standard errors in parentheses.",
-   "Model 1 is a linear regression, while Models 2 and 3 are logistic regressions. Coefficients for Models 2 and 3 are odds ratios."),
+   "Model 1 is an OLS regression, while Models 2 and 3 are binomial logistic regressions. Coefficients for Models 2 and 3 are odds ratios."),
   coef_rename = c(
-    "sovereigntyrelatedpledgeSovereignty-related pledge recalled" = "Sovereignty-related pledge recalled",
+    "sovereigntyrelatedpledgeoranythingSovereignty-related pledge recalled" = "Sovereignty-related pledge recalled",
+    "importance_culture" = "Importance of Culture and Nationalism"
+)) |>
+  flextable::save_as_docx(path = "_SharedFolder_carney-nationalism/_output/H3_regression_results_modelsummary.docx")
+table(Survey$importance_culture, Survey$sovereigntyrelatedpledgeoranything, useNA = "always")
+table(Survey$pid_liberal, Survey$sovereigntyrelatedpledgeoranything, useNA = "always")
+
+modelsummary::modelsummary(
+  list(
+    "Outcome: Importance of Culture and Nationalism (1)" = ModelMediatorCtrl,
+    "Outcome: Liberal Party ID (2)" = ModelSovereigntyPIDCtrl,
+    "Outcome: Liberal Party ID + mediator (3)" = ModelH3Ctrl
+  ),
+  output = "flextable",
+  statistic = "std.error",
+  exponentiate = c(TRUE, FALSE, FALSE),
+  stars = T,
+  gof_omit = "AIC|BIC|Log.Lik|F|RMSE|Deviance|Num\\.obs\\.",
+  notes = c("Standard errors in parentheses.",
+   "Model 1 is an OLS regression, while Models 2 and 3 are binomial logistic regressions. Coefficients for Models 2 and 3 are odds ratios."),
+  coef_rename = c(
+    "sovereigntyrelatedpledgeoranythingSovereignty-related pledge recalled" = "Sovereignty-related pledge recalled",
     "educationUniversity" = "Education: University",
     "languageFrench" = "Language: French",
     "languageOther" = "Language: Other",
@@ -443,4 +508,4 @@ modelsummary::modelsummary(
     "genderWoman" = "Gender: Woman",
     "importance_culture" = "Importance of Culture and Nationalism"
 )) |>
-  flextable::save_as_docx(path = "_SharedFolder_carney-nationalism/_output/H3_regression_results_modelsummary.docx")
+  flextable::save_as_docx(path = "_SharedFolder_carney-nationalism/_output/H3_regression_results_ctrl_modelsummary.docx")
