@@ -63,10 +63,20 @@ table(Survey$political_party, Survey$promise_party, useNA = "always")
 
 ### Recall of a pledge ####
 Survey$actual_pledge_recalled <- "Actual pledge recalled"
-Survey$actual_pledge_recalled[!(Survey$promise_number %in% c("0.0.0", "0.0.0.0", "0.0.0.0.0", "0.0.0.0.0.0"))] <- "No actual pledge recalled"
-Survey$actual_pledge_recalled[Survey$promise_number == "0.0.0"] <- "Don't know / Refused to answer"
+Survey$actual_pledge_recalled[Survey$promise_number %in% c("0.0.0", "0.0.0.0", "0.0.0.0.0", "0.0.0.0.0.0")] <- "No actual pledge recalled"
+Survey$actual_pledge_recalled[Survey$promise_number == "0.0.0"] <- NA
 Survey$actual_pledge_recalled <- as.factor(Survey$actual_pledge_recalled)
 table(Survey$actual_pledge_recalled, useNA = "always")
+
+Survey$quality_of_recall <- NA
+Survey$quality_of_recall[Survey$promise_number == "0.0.0"] <- "Don't know / Refused to answer"
+Survey$quality_of_recall[Survey$promise_number == "0.0.0.0"] <- "Hallucinated / Not in platform"
+Survey$quality_of_recall[Survey$promise_number %in% c("0.0.0.0.0", "0.0.0.0.0.0")] <- "Larger than actual pledge"
+Survey$quality_of_recall[Survey$actual_pledge_recalled == "Actual pledge recalled"] <- "Actual pledge recalled"
+Survey$quality_of_recall <- factor(Survey$quality_of_recall,
+  levels = c("Don't know / Refused to answer", "Hallucinated / Not in platform", "Larger than actual pledge", "Actual pledge recalled")
+)
+table(Survey$quality_of_recall, useNA = "always")
 
 ### Mediating variable: Recall of a sovereignty-related pledge ####
 table(Survey$sov_y_n.x, useNA = "always")
@@ -79,14 +89,15 @@ Survey$sovereigntyrelated[Survey$sov_y_n == 1] <- 1
 Survey$sovereigntyrelated[Survey$promise_number == "0.0.0.0.0.0"] <- 1
 Survey$sovereigntyrelated <- factor(
   ifelse(Survey$sovereigntyrelated == 1, "Sovereignty-related", "Non-sovereignty-related"),
-  levels = c("Sovereignty-related", "Non-sovereignty-related")
+  levels = c("Non-sovereignty-related", "Sovereignty-related")
 )
 table(Survey$sovereigntyrelated, useNA = "always")
-Survey$sovereigntyrelatedpledge <- 0
+Survey$sovereigntyrelatedpledge <- NA
 Survey$sovereigntyrelatedpledge[Survey$sov_y_n == 1] <- 1
+Survey$sovereigntyrelatedpledge[Survey$sov_y_n == 0] <- 0
 Survey$sovereigntyrelatedpledge <- factor(
-  ifelse(Survey$sovereigntyrelatedpledge == 1, "Sovereignty-related pledge recalled", "No recall / Non-sovereignty-related"),
-  levels = c("Sovereignty-related pledge recalled", "No recall / Non-sovereignty-related")
+  ifelse(Survey$sovereigntyrelatedpledge == 1, "Sovereignty-related pledge recalled", "Non-sovereignty-related pledge recalled"),
+  levels = c("Non-sovereignty-related pledge recalled", "Sovereignty-related pledge recalled")
 )
 table(Survey$sovereigntyrelatedpledge, useNA = "always")
 
@@ -235,7 +246,7 @@ Survey$province[Survey$ses_province == 9 | Survey$ses_province == 10 | (Survey$s
 Survey$province <- factor(
   ifelse(Survey$province == 1, "West",
   ifelse(Survey$province == 2, "Quebec", "Other")),
-  levels = c("West", "Quebec", "Other")
+  levels = c("Other", "West", "Quebec")
 )
 table(Survey$province, useNA = "always")
 
@@ -287,8 +298,20 @@ PartyRecallSovereigntyPlotWeighted <- Survey |>
   group_by(pid_party, sovereigntyrelatedpledge) |>
   dplyr::summarize(number = sum(weights, na.rm = TRUE), .groups = "drop") |>
   ungroup()
+# wrap legend labels into (at most) two lines when > 15 chars, recreate + save weighted plot
+wrap_two_lines <- function(x, width = 15) {
+  vapply(x, function(lbl) {
+    if (nchar(lbl) > width) {
+      paste(stringr::str_wrap(lbl, width = width), collapse = "\n")
+    } else {
+      lbl
+    }
+  }, FUN.VALUE = character(1))
+}
+
 ggplot(PartyRecallSovereigntyPlotWeighted, aes(x = pid_party, y = number, fill = sovereigntyrelatedpledge)) +
   geom_col(position = position_dodge(width = 0.75), width = 0.7) +
+  scale_fill_discrete(labels = wrap_two_lines) +
   scale_y_continuous() +
   labs(
     x = "Party identification",
@@ -296,15 +319,16 @@ ggplot(PartyRecallSovereigntyPlotWeighted, aes(x = pid_party, y = number, fill =
     fill = "Promise type"
   ) +
   theme_minimal() +
-  theme(legend.position = "bottom")
-ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlotWeighted.png", width = 8, height = 5)
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlotWeighted.png", width = 5.5, height = 4.25)
 
 PartyRecallSovereigntyPlot <- Survey |>
-  filter(!is.na(pid_party)) |>
+  filter(!is.na(pid_party), !is.na(sovereigntyrelatedpledge)) |>
   group_by(pid_party, sovereigntyrelatedpledge) |>
   dplyr::summarize(number = n())
 ggplot(PartyRecallSovereigntyPlot, aes(x = pid_party, y = number, fill = sovereigntyrelatedpledge)) +
   geom_col(position = position_dodge(width = 0.75), width = 0.7) +
+  scale_fill_discrete(labels = wrap_two_lines) +
   scale_y_continuous() +
   labs(
     x = "Party identification",
@@ -312,58 +336,61 @@ ggplot(PartyRecallSovereigntyPlot, aes(x = pid_party, y = number, fill = soverei
     fill = "Promise type"
   ) +
   theme_minimal() +
-  theme(legend.position = "bottom")
-ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlot.png", width = 8, height = 5)
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlot.png", width = 5.5, height = 4.25)
+
+ggplot(Survey, aes(x = quality_of_recall)) +
+  geom_bar() +
+  labs(
+    x = "Quality of recall",
+    y = "Number of respondents"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("_SharedFolder_carney-nationalism/_graph/QualityOfRecall.png", width = 5.5, height = 4.25)
 
 ## H2: Pledge-definition treatment increases pledge recall. ####
-# ajuster un logit pondéré recalled ~ treatment
+# weighted logit recalled ~ treatment
+table(Survey$actual_pledge_recalled, useNA = "always")
 ModelRecallTreatment <- glm(actual_pledge_recalled ~ treatment, family = binomial(), data = Survey, weights = Survey$weights)
 summary(ModelRecallTreatment)
-Survey$actual_pledge_recalled
-# prédictions sur l'échelle du lien (logit) puis transformation et IC 95 %
-newdata <- tibble(treatment = factor(c("Treatment", "Control"), levels = levels(df_h2$treatment)))
-pred <- predict(fit_h2, newdata = newdata, se.fit = TRUE, type = "link")
+
+# predictions
+newdata <- tibble(treatment = factor(c("Treatment", "Control"), levels = levels(Survey$treatment)))
+pred <- predict(ModelRecallTreatment, newdata = newdata, se.fit = TRUE, type = "link")
 est <- plogis(pred$fit)
 se <- pred$se.fit
-lower <- plogis(pred$fit - 1.96 * se)
-upper <- plogis(pred$fit + 1.96 * se)
-
-df_plot_h2 <- newdata |>
+lower <- plogis(pred$fit - qnorm(0.975) * se)
+upper <- plogis(pred$fit + qnorm(0.975) * se)
+H2Plot <- newdata |>
   mutate(
     estimate = est,
     lower = lower,
     upper = upper
   )
 
-# graphique : barres avec IC 95 %
-library(ggplot2)
-
-p_h2 <- ggplot(df_plot_h2, aes(x = treatment, y = estimate, fill = treatment)) +
+# plot for H2
+ggplot(H2Plot, aes(x = treatment, y = estimate, fill = treatment)) +
   geom_col(width = 0.6, show.legend = FALSE) +
   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, size = 0.8) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
   labs(
-    x = "Condition expérimentale",
-    y = "Part (%) ayant nommé une vraie promesse (pondérée)",
-    title = "Effet du traitement sur le rappel d'une vraie promesse",
-    subtitle = "Estimations et intervalles de confiance à 95 % (modèle logit pondéré)"
+    x = "Experimental condition",
+    y = "Estimated probability of recalling an actual pledge"
   ) +
-  theme_minimal()
-
-p_h2
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("_SharedFolder_carney-nationalism/_graph/H2Plot.png", width = 5.5, height = 4.25)
 
 ## H3: Perceived importance of culture and nationalism mediates the relationship between sovereignty-pledge recognition and Liberal support. ####
-# Ajustements de modèles pour H3 et tableau de régression
-library(broom)
-
-# Préparer les données (retenir observations complètes pour variables d'intérêt)
-df_h3 <- Survey |>
+# Adjust models & prepare data for H3 regressions (keep only complete cases for relevant variables)
+H3Data <- Survey |>
   mutate(
     pid_lib_bin = ifelse(pid_liberal == "Liberal", 1L, 0L)
   ) |>
   filter(
     !is.na(pid_lib_bin),
-    !is.na(promise_type),
+    !is.na(sovereigntyrelatedpledge),
     !is.na(importance_culture),
     !is.na(education),
     !is.na(language),
@@ -373,62 +400,47 @@ df_h3 <- Survey |>
     !is.na(weights)
   )
 
-# Modèle 1: effet total (pid ~ promise_type + controles)
-model_total <- glm(
-  pid_lib_bin ~ promise_type + education + language + province + age + gender,
-  family = binomial(),
-  data = df_h3,
-  weights = weights
-)
+# Model: total effect (pid ~ sovereigntyrelatedpledge + controls)
+ModelSovereigntyPID <- glm(pid_lib_bin ~ sovereigntyrelatedpledge + education + language + province + age + gender,
+  family = binomial(), data = H3Data, weights = weights)
+summary(ModelSovereigntyPID)
 
-# Modèle du médiateur: importance_culture ~ promise_type + controles (lm pondéré)
-mediator_model <- lm(
-  importance_culture ~ promise_type + education + language + province + age + gender,
-  data = df_h3,
-  weights = weights
-)
+# Mediator model: importance_culture ~ sovereigntyrelatedpledge + controls (weighted lm)
+ModelMediator <- lm(
+  importance_culture ~ sovereigntyrelatedpledge + education + language + province + age + gender,
+  data = H3Data, weights = weights)
+summary(ModelMediator)
 
-# Modèle 3: outcome contrôlé pour le médiateur (pid ~ promise_type + importance_culture + controles)
-model_with_med <- glm(
-  pid_lib_bin ~ promise_type + importance_culture + education + language + province + age + gender,
-  family = binomial(),
-  data = df_h3,
-  weights = weights
-)
+# Model: outcome controlled for mediator (pid ~ sovereigntyrelatedpledge + importance_culture + controls)
+ModelH3 <- glm(
+  pid_lib_bin ~ sovereigntyrelatedpledge + importance_culture + education + language + province + age + gender,
+  family = binomial(), data = H3Data, weights = weights)
+summary(ModelH3)
 
-# Fonction utilitaire pour tidy + CI; ajoute OR pour modèles logit
-tidy_with_extras <- function(mod, name) {
-  td <- broom::tidy(mod, conf.int = TRUE)
-  td <- td |> mutate(model = name, term = term)
-  if (inherits(mod, "glm") && family(mod)$family == "binomial") {
-    td <- td |> mutate(
-      OR = exp(estimate),
-      OR_conf.low = exp(conf.low),
-      OR_conf.high = exp(conf.high)
-    )
-  } else {
-    td <- td |> mutate(OR = NA_real_, OR_conf.low = NA_real_, OR_conf.high = NA_real_)
-  }
-  td |> select(model, term, estimate, std.error, conf.low, conf.high, OR, OR_conf.low, OR_conf.high, p.value)
-}
-
-# Construire tableau combiné
-reg_table <- bind_rows(
-  tidy_with_extras(model_total, "Total effect (no mediator)"),
-  tidy_with_extras(mediator_model, "Mediator (importance_culture)"),
-  tidy_with_extras(model_with_med, "Outcome with mediator")
-) |>
-  arrange(model, term)
-
-# Renvoyer les modèles et le tableau (objet utile en sortie)
-reg_results <- list(
-  models = list(
-    model_total = model_total,
-    mediator_model = mediator_model,
-    model_with_med = model_with_med
+# Display results with modelsummary and create a flextable from the three models and save as a Word document
+modelsummary::modelsummary(
+  list(
+    "Outcome: Importance of Culture and Nationalism (1)" = ModelMediator,
+    "Outcome: Liberal Party ID (2)" = ModelSovereigntyPID,
+    "Outcome: Liberal Party ID + mediator (3)" = ModelH3
   ),
-  table = reg_table,
-  data_used = df_h3
-)
-
-reg_results
+  output = "flextable",
+  statistic = "std.error",
+  exponentiate = c(TRUE, FALSE, FALSE),
+  stars = T,
+  gof_omit = "AIC|BIC|Log.Lik|F|RMSE|Deviance|Num\\.obs\\.",
+  notes = c("Standard errors in parentheses.",
+   "Model 1 is a linear regression, while Models 2 and 3 are logistic regressions. Coefficients for Models 2 and 3 are odds ratios."),
+  coef_rename = c(
+    "sovereigntyrelatedpledgeSovereignty-related pledge recalled" = "Sovereignty-related pledge recalled",
+    "educationUniversity" = "Education: University",
+    "languageFrench" = "Language: French",
+    "languageOther" = "Language: Other",
+    "provinceWest" = "Region: Western Canada",
+    "provinceQuebec" = "Region: Quebec",
+    "age35–54" = "Age: 35–54",
+    "age55+" = "Age: 55+",
+    "genderWoman" = "Gender: Woman",
+    "importance_culture" = "Importance of Culture and Nationalism"
+)) |>
+  flextable::save_as_docx(path = "_SharedFolder_carney-nationalism/_output/H3_regression_results_modelsummary.docx")
