@@ -396,6 +396,7 @@ ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallActualPlotWeighted.pn
 sum(PartyRecallActualPlotWeightedStats$total_w)
 sum(PartyRecallActualPlotWeightedStats$sub_w)
 sum(PartyRecallActualPlotWeightedStats$sum_w2)
+table(Survey$pid_party, Survey$actual_pledge_recalled, useNA = "always")
 
 # add weights to this plot
 # compute weighted shares and 95% CIs, then plot (returns ggplot object)
@@ -486,56 +487,33 @@ ggplot(group_means_h2, aes(x = treatment, y = mean)) +
 ggsave("_SharedFolder_carney-nationalism/_graph/H2_PledgeRecallTreatmentEffect.png", width = 5.5, height = 4.25)
 
 ## H3: Perceived importance of culture and nationalism mediates the relationship between sovereignty-pledge recognition and Liberal support. ####
-# Model: total effect (pid ~ sovereigntyrelatedpledgeoranything + controls)
-ModelSovereigntyPID <- glm(pid_liberal ~ sovereigntyrelatedpledgeoranything, family = binomial(), data = Survey)
+# Model: total effect (sovereigntyrelatedpledgeoranything ~ pid + controls)
+ModelSovereigntyPID <- glm(sovereigntyrelatedpledgeoranything ~ pid_liberal, family = binomial(), data = Survey)
 summary(ModelSovereigntyPID)
 
-ModelSovereigntyPIDSeparate <- glm(pid_liberal ~ sovereigntyrelated + actual_pledge_recalled, family = binomial(), data = Survey)
-summary(ModelSovereigntyPIDSeparate)
-
-ModelSovereigntyPIDCtrl <- glm(pid_liberal ~ sovereigntyrelatedpledgeoranything + education + language + province + age + gender,
+ModelSovereigntyPIDCtrl <- glm(sovereigntyrelatedpledgeoranything ~ pid_liberal + education + language + province + age + gender,
   family = binomial(), data = Survey)
 summary(ModelSovereigntyPIDCtrl)
 
-ModelSovereigntyPIDCtrlSeparate <- glm(pid_liberal ~ sovereigntyrelated + actual_pledge_recalled +
-  education + language + province + age + gender, family = binomial(), data = Survey)
-summary(ModelSovereigntyPIDCtrlSeparate)
+# Nationalism model: importance_culture ~ pid_liberal + controls
+ModelNationalismPID <- lm(importance_culture ~ pid_liberal, data = Survey)
+summary(ModelNationalismPID)
 
-# Mediator model: importance_culture ~ sovereigntyrelatedpledgeoranything + controls
-ModelMediator <- lm(importance_culture ~ sovereigntyrelatedpledgeoranything, data = Survey)
-summary(ModelMediator)
-
-ModelMediatorSeparate <- lm(importance_culture ~ sovereigntyrelated + actual_pledge_recalled, data = Survey)
-summary(ModelMediatorSeparate)
-
-ModelMediatorCtrl <- lm(importance_culture ~ sovereigntyrelatedpledgeoranything + education + language + province + age + gender,
+ModelNationalismPIDCtrl <- lm(importance_culture ~ pid_liberal + education + language + province + age + gender,
   data = Survey)
-summary(ModelMediatorCtrl)
+summary(ModelNationalismPIDCtrl)
 
-ModelMediatorCtrlSeparate <- lm(importance_culture ~ sovereigntyrelated + actual_pledge_recalled +
-  education + language + province + age + gender, data = Survey)
-summary(ModelMediatorCtrlSeparate)
-
-# Model: outcome controlled for mediator (pid ~ sovereigntyrelatedpledgeoranything + importance_culture + controls)
-ModelH3 <- glm(pid_liberal ~ sovereigntyrelatedpledgeoranything + importance_culture, family = binomial(), data = Survey)
+# Model: outcome controlled for mediator (sovereigntyrelatedpledgeoranything ~ pid_liberal + importance_culture + controls)
+ModelH3 <- glm(sovereigntyrelatedpledgeoranything ~ pid_liberal + importance_culture, family = binomial(), data = Survey)
 summary(ModelH3)
 
-ModelH3Separate <- glm(pid_liberal ~ sovereigntyrelated + actual_pledge_recalled + importance_culture, family = binomial(), data = Survey)
-summary(ModelH3Separate)
-
-ModelH3Ctrl <- glm(pid_liberal ~ sovereigntyrelatedpledgeoranything + importance_culture +
+ModelH3Ctrl <- glm(sovereigntyrelatedpledgeoranything ~ pid_liberal + importance_culture +
   education + language + province + age + gender, family = binomial(), data = Survey)
 summary(ModelH3Ctrl)
 
-ModelH3CtrlSeparate <- glm(pid_liberal ~ sovereigntyrelated + actual_pledge_recalled + importance_culture +
-  education + language + province + age + gender, family = binomial(), data = Survey)
-summary(ModelH3CtrlSeparate)
-
 # Display results with modelsummary and create a flextable from the three models and save as a Word document
 modelsummary::modelsummary(
-  models = list(
-    "1" = ModelMediator, "2" = ModelMediatorSeparate, "3" = ModelMediatorCtrl, "4" = ModelMediatorCtrlSeparate
-  ),
+  models = list("(1)" = ModelNationalismPID, "(2)" = ModelNationalismPIDCtrl),
   output = "flextable",
   statistic = "std.error",
   exponentiate = TRUE,
@@ -543,9 +521,7 @@ modelsummary::modelsummary(
   gof_omit = "AIC|BIC|Log.Lik|F|RMSE|Deviance|Num\\.obs\\.",
   notes = c("Outcome: Importance of Culture and Nationalism", "Standard errors in parentheses.", "Method: OLS regression."),
   coef_rename = c(
-    "sovereigntyrelatedpledgeoranythingSovereignty-related pledge recalled" = "Sovereignty-Related Pledge Recalled",
-    "sovereigntyrelatedSovereignty-related" = "Sovereignty-Related Words Used",
-    "actual_pledge_recalledActual pledge recalled" = "Actual Pledge Recalled",
+    "pid_liberalLiberal" = "Party ID: Liberal",
     "educationUniversity" = "Education: University",
     "languageFrench" = "Language: French",
     "languageOther" = "Language: Other",
@@ -559,26 +535,20 @@ modelsummary::modelsummary(
 
 modelsummary::modelsummary(
   list(
-    "5" = ModelSovereigntyPID,
-    "6" = ModelSovereigntyPIDSeparate,
-    "7" = ModelH3,
-    "8" = ModelH3Separate,
-    "9" = ModelSovereigntyPIDCtrl,
-    "10" = ModelSovereigntyPIDCtrlSeparate,
-    "11" = ModelH3Ctrl,
-    "12" = ModelH3CtrlSeparate
+    "(3)" = ModelSovereigntyPID,
+    "(4)" = ModelH3,
+    "(5)" = ModelSovereigntyPIDCtrl,
+    "(6)" = ModelH3Ctrl
   ),
   output = "flextable",
   statistic = "std.error",
   exponentiate = FALSE,
   stars = TRUE,
   gof_omit = "AIC|BIC|Log.Lik|F|RMSE|Deviance|Num\\.obs\\.",
-  notes = c("Outcome: Liberal Party ID", "Standard errors in parentheses.",
+  notes = c("Outcome: Sovereignty-Related Pledge Recalled", "Standard errors in parentheses.",
    "Method: Binomial logistic regression. Coefficients for Models 2 and 3 are odds ratios."),
   coef_rename = c(
-    "sovereigntyrelatedpledgeoranythingSovereignty-related pledge recalled" = "Sovereignty-Related Pledge Recalled",
-    "sovereigntyrelatedSovereignty-related" = "Sovereignty-Related Words Used",
-    "actual_pledge_recalledActual pledge recalled" = "Actual Pledge Recalled",
+    "pid_liberalLiberal" = "Party ID: Liberal",
     "importance_culture" = "Importance of Culture and Nationalism",
     "educationUniversity" = "Education: University",
     "languageFrench" = "Language: French",
@@ -589,7 +559,7 @@ modelsummary::modelsummary(
     "age55+" = "Age: 55+",
     "genderWoman" = "Gender: Woman"
 )) |>
-  flextable::save_as_docx(path = "_SharedFolder_carney-nationalism/_output/models_liberal.docx")
+  flextable::save_as_docx(path = "_SharedFolder_carney-nationalism/_output/models_sovereigntyrecall.docx")
 table(Survey$importance_culture, Survey$sovereigntyrelatedpledgeoranything, useNA = "always")
 table(Survey$pid_liberal, Survey$sovereigntyrelatedpledgeoranything, useNA = "always")
 
