@@ -1,5 +1,5 @@
 # Load packages and datasets ####
-pacman::p_load(tidyverse, anesrake, openxlsx, survey, modelsummary, flextable)
+pacman::p_load(tidyverse, anesrake, openxlsx, survey, modelsummary, flextable, stringi)
 Survey <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/Survey_Questionnaire_With_Coding.xlsx")
 Survey <- Survey[3:nrow(Survey),]
 OppositionPartyPledges <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/OppositionPartyPledges.xlsx")
@@ -580,3 +580,146 @@ TopPledges <- Survey |>
     by = "promise_number"
   )
 openxlsx::write.xlsx(TopPledges, "_SharedFolder_carney-nationalism/_output/TopPledges.xlsx")
+
+
+#### Nic's code ####
+# === Nettoyer texte ===
+clean_text <- function(x) {
+  x <- str_to_lower(x)
+  x <- str_trim(x)
+  x <- str_squish(x)
+  x <- str_remove_all(x, "[[:punct:]]")
+  x <- stringi::stri_trans_general(x, "Latin-ASCII")
+  return(x)
+}
+Survey$promise_clean <- clean_text(Survey$promise_mostImport_s)
+Survey$promise_d_clean <- clean_text(Survey$promise_mostImport_d)
+Survey$issue_clean <- clean_text(Survey$issue_mostImport_ope)
+
+# === Catégoriser ===
+categorize <- function(x) {
+  case_when(
+    is.na(x) ~ NA_character_,
+    # Économie / Commerce / Coût de la vie
+    str_detect(x, "econom|aconomie|economy|economic|emploi|job|travail|work|chomage|unemploy|entreprise|business|invest|commerce|trade|tarif|tariff|libre.echange|free.trade|import|export|productivit|cost of living|pouvoir dachat|cout de la vie|couts de la vie|croissance|growth|capital expenditure|pro growth|ressources|inflation|negociation|negocier|production petrol") ~ "Économie / Commerce",
+    # Santé
+    str_detect(x, "sante|santa|health|hopital|hospital|medic|infirm|nurse|doctor|pharma|soins|care|mefaits") ~ "Santé",
+    # Logement
+    str_detect(x, "logement|housing|loyer|rent|maison|house|habitation|propriete|property|immobil|domicile") ~ "Logement",
+    # Environnement / Énergie
+    str_detect(x, "environ|climat|climate|vert|green|carbone|carbon|petrole|oil|pipeline|energie|energy|plastique|plastic|emission|nature") ~ "Environnement / Énergie",
+    # Sécurité / Crime
+    str_detect(x, "crime|criminalite|securite|security|loi.*ordre|ordre.*loi|reduce crime|police") ~ "Sécurité / Crime",
+    # Québec / Bloc — AVANT Souveraineté
+    str_detect(x, "quebec|bloc|interets du quebec|chien garde|droits du quebec|nos interets|nos droits|clause derogatoire|laicite|majorite.*provinces|droit.*provinces|ma langue|notre culture|unicite|specificite quebecoise|lois du quebec|interets quebecois") ~ "Québec / Bloc",
+    # Défense / Souveraineté / Trump / USA
+    str_detect(x, "souverain|sovereign|independ|defense|defence|defendre|militaire|military|armee|army|nato|otan|trump|etats.unis|united.states|usa|americain|american|tarri|frontiere|border|menaces|ferme|firm|crise douaniere|proteger.*canada|canada.*proteger|eunis|atatsunis|foreign affairs|surtaxe.*americain") ~ "Souveraineté / Défense / USA",
+    # Éducation
+    str_detect(x, "educa|aducation|ecole|school|universi|etudiant|student") ~ "Éducation",
+    # Immigration
+    str_detect(x, "immigra|migra|refugie|refugee|asylum") ~ "Immigration",
+    # Fiscalité / Budget / Transferts
+    str_detect(x, "taxe|tax|impot|fiscal|budget|deficit|dette|debt|depense|spending|transfert|financement|cadres financiers|finances.*ordre") ~ "Fiscalité / Budget",
+    # Canada fort / Unité / Leadership / Respect
+    str_detect(x, "strong canada|canada strong|canada fort|unite|unity|nation|pays|country|canadian|canadien|fiert|pride|together|leader.*fort|leadership|governing for everyone|respect.*canada|canada.*respect|institutions|democratie|qualite de vie") ~ "Canada fort / Leadership",
+    # Gouvernance / Réforme / Liberté
+    str_detect(x, "efficacit|gestion|gouvernement|reform|dereg|changer le systeme|gros bon sens|competence|serieux|wok|liberte|moins etat|representation|equite|responsab") ~ "Gouvernance / Réforme",
+    # Services sociaux / Droits
+    str_detect(x, "social|aide|help|pauvre|poverty|inequal|inegal|filet|welfare|assurance|acquis sociaux|protection des acquis|services") ~ "Services sociaux",
+    # Infrastructure
+    str_detect(x, "infrastruc|transport|route|road|train|transit|pont|bridge") ~ "Infrastructure / Transport",
+    TRUE ~ "Autre"
+  )
+}
+Survey$promise_cat <- categorize(Survey$promise_clean)
+Survey$issue_cat <- categorize(Survey$issue_clean)
+
+# === Mettre en NA les catégories non pertinentes ===
+#drop_cats <- c("Autre", "Souveraineté / Défense / USA", "Canada fort / Leadership")
+#Survey$promise_cat[Survey$promise_cat %in% drop_cats] <- NA_character_
+#Survey$issue_cat[Survey$issue_cat %in% drop_cats] <- NA_character_
+
+# === Filtrer too broad et aussi seulement ceux qui ont répondu aux deux questions ===
+too_broad <- Survey  |>
+  filter(promise_number %in% c("0.0.0.0.0", "0.0.0.0.0.0")) |>
+  filter(!is.na(promise_cat) & !is.na(issue_cat))
+cat("N répondants avec les deux réponses =", nrow(too_broad), "\n")
+table(too_broad$promise_cat == too_broad$issue_cat, useNA = "always") # pas convaincu de ce résultat
+
+# === Traduire les catégories ===
+translate_cat <- function(x) {
+  case_when(
+    x == "Autre" ~ "Other",
+    x == "Souveraineté / Défense / USA" ~ "Sovereignty / Defense / USA",
+    x == "Canada fort / Leadership" ~ "Canada Strong / Leadership",
+    x == "Économie / Commerce" ~ "Economy / Trade",
+    x == "Santé" ~ "Health",
+    x == "Logement" ~ "Housing",
+    x == "Environnement / Énergie" ~ "Environment / Energy",
+    x == "Sécurité / Crime" ~ "Security / Crime",
+    x == "Québec / Bloc" ~ "Quebec / Bloc",
+    x == "Éducation" ~ "Education",
+    x == "Immigration" ~ "Immigration",
+    x == "Fiscalité / Budget" ~ "Taxation / Budget",
+    x == "Gouvernance / Réforme" ~ "Governance / Reform",
+    x == "Services sociaux" ~ "Social Services",
+    x == "Infrastructure / Transport" ~ "Infrastructure / Transport",
+    TRUE ~ x
+  )
+}
+
+# === Distributions ===
+promise_both <- too_broad  |>
+  count(category = translate_cat(promise_cat))  |>
+  mutate(source = "Most important pledge",
+         prop = n / sum(n))
+
+issue_both <- too_broad  |>
+  count(category = translate_cat(issue_cat))  |>
+  mutate(source = "Most important issue",
+         prop = n / sum(n))
+
+combined_both <- bind_rows(promise_both, issue_both)
+
+# === Graphique ===
+ggplot(combined_both, aes(x = reorder(category, prop), y = prop, fill = source)) +
+  geom_col(position = "dodge", width = 0.7) +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = c("Most important pledge" = "#2C3E50",
+                                "Most important issue" = "#95A5A6")) +
+  labs(
+    title = "Do 'Too Broad' Respondents Name the Same Issue Twice?",
+    subtitle = paste0("Comparing recalled pledge topic with most important issue (n = ", nrow(both), ")"),
+    x = NULL,
+    y = "Share of responses",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(color = "grey40", size = 11),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+# 1. Pour les répondants qui ont nommé une promesse trop large pour être une promesse, quel genre d'enjeu mentionnent-ils comme
+# most important issue : la même chose que la promesse ou quelque chose de différent? Peut-être juste comparer visuellement le contenu
+# de Survey$promise_mostImport_d / Survey$promise_mostImport_s avec le contenu de Survey$issue_mostImport_ope lorsque
+# Survey$quality_of_recall == "Too broad to be a pledge" et trouver des catégories de réponses. Tu pourrais juste noter quelques
+# grandes tendances qualitativement ici je crois.
+
+# Among the 145 respondents whose recalled pledge was coded as "too broad," Economy/Trade dominates both the recalled pledge and
+# the most important issue, accounting for roughly 40% of responses in each case. The close alignment between the two bars across
+# most categories, particularly Economy/Trade, Quebec/Bloc, and Environment/Energy, suggests that these respondents are projecting
+# their own policy priorities rather than recalling specific campaign commitments.
+
+# 2. Analyser le contenu de Survey$issue_mostImport_ope avec des dictionnaires d'enjeux, entre autres pour y repérer les mots-clés liés
+# à la souveraineté canadienne et à l'inflation/le cout de la vie. Pour le cout de la vie, tu peux utiliser le dictionnaire d'enjeux
+# qui se trouve sur tube; les étapes 0, 1, 4 et 5 te permettront de l'analyser. tube::ellipse_query(con, "dict-subcategories") puis
+# cost_life. Pour la souveraineté, je pense que tu devrais en créer un custom à partir des mots-clés qu'on utilise dans Data and
+# Methods dans l'article.
+
+# Coût de la vie / inflation : 421 répondants (13.8%)
+# Souveraineté canadienne : 567 répondants (18.6%)
