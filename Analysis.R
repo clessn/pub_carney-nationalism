@@ -715,6 +715,15 @@ ggplot(combined_both, aes(x = reorder(category, prop), y = prop, fill = source))
 # most categories, particularly Economy/Trade, Quebec/Bloc, and Environment/Energy, suggests that these respondents are projecting
 # their own policy priorities rather than recalling specific campaign commitments.
 
+# Pour les mots-clés de souveraineté, je suis parti de notre définition opérationnelle dans le Data and Methods et j'ai dérivé des termes
+# bilingues qu'un répondant utiliserait spontanément dans une réponse open-ended. Pour délimiter les catégories plus largement, j'ai créé
+# des regex par grande famille thématique (économie, santé, logement, environnement, etc.), puis j'ai inspecté manuellement les réponses
+# qui tombaient dans "Autre" pour ajuster les regex et attraper les formulations manquantes. L'ordre des catégories dans le code compte
+# aussi, par exemple, Québec/Bloc est évalué avant Souveraineté/Défense pour que "défendre le Québec" tombe dans la bonne catégorie plutôt
+# que dans souveraineté canadienne. Les catégories trop vagues ou non pertinentes pour l'analyse (Autre, Souveraineté/Défense/USA, Canada
+# fort/Leadership) ont été mises en NA. C'est pas parfait, c'est du regex sur du open-ended, mais après plusieurs itérations il restait
+# seulement ~25 réponses non classifiées sur ~500, toutes à n=1.
+
 # 2. Analyser le contenu de Survey$issue_mostImport_ope avec des dictionnaires d'enjeux, entre autres pour y repérer les mots-clés liés
 # à la souveraineté canadienne et à l'inflation/le cout de la vie. Pour le cout de la vie, tu peux utiliser le dictionnaire d'enjeux
 # qui se trouve sur tube; les étapes 0, 1, 4 et 5 te permettront de l'analyser. tube::ellipse_query(con, "dict-subcategories") puis
