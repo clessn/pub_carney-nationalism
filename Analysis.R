@@ -690,7 +690,7 @@ ggplot(combined_both, aes(x = reorder(category, prop), y = prop, fill = source))
                                 "Most important issue" = "#95A5A6")) +
   labs(
     title = "Do 'Too Broad' Respondents Name the Same Issue Twice?",
-    subtitle = paste0("Comparing recalled pledge topic with most important issue (n = ", nrow(both), ")"),
+    subtitle = paste0("Comparing recalled pledge topic with most important issue (n = ", nrow(too_broad), ")"),
     x = NULL,
     y = "Share of responses",
     fill = NULL
