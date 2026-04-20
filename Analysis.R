@@ -31,6 +31,11 @@ table(Survey$promise_number, useNA = "always")
 table(Survey$X85, useNA = "always") # 40 respondents identified a second pledge accurately
 table(Survey$X86, useNA = "always") # no third promise
 # 622 non-responses (25%), 250 not in platform (10%), 643 broader-than-promises (26%), and 978 actual promises (39%)
+SurveyIncludingSecondPledges <- Survey |>
+  filter(!is.na(X85)) |>
+  rename(promise_number_all = X85) |>
+  bind_rows(Survey)
+SurveyIncludingSecondPledges$promise_number_all <- SurveyIncludingSecondPledges$promise_number # only useful for analyses where we want to count second pledges as well
 Survey <- left_join(Survey, OppositionPartyPledges, by = "promise_number")
 table(Survey$political_party, useNA = "always")
 class(Survey$political_party)
@@ -38,11 +43,17 @@ table(is.na(Survey$label_fr), useNA = "always")
 table(is.na(Survey$label_en), useNA = "always")
 GovernmentPartyPledges <- GovernmentPartyPledges |>
   select(Numéro, Libellé.FR, Libellé.EN, sov_y_n)
+table(GovernmentPartyPledges$sov_y_n, useNA = "always")
 GovernmentPartyPledges$political_party <- "Libéral"
 Survey <- left_join(Survey, GovernmentPartyPledges, by = c("promise_number" = "Numéro"))
 Survey$political_party <- Survey$political_party.x
 Survey$political_party[!is.na(Survey$political_party.y)] <- Survey$political_party.y[!is.na(Survey$political_party.y)]
 table(Survey$political_party, useNA = "always")
+SurveyIncludingSecondPledges <- left_join(SurveyIncludingSecondPledges, GovernmentPartyPledges, by = c("promise_number_all" = "Numéro"))
+SurveyIncludingSecondPledges$political_party <- SurveyIncludingSecondPledges$political_party.x
+SurveyIncludingSecondPledges$political_party[!is.na(SurveyIncludingSecondPledges$political_party.y)] <-
+  SurveyIncludingSecondPledges$political_party.y[!is.na(SurveyIncludingSecondPledges$political_party.y)]
+table(SurveyIncludingSecondPledges$political_party, useNA = "always")
 Survey$label_fr[!is.na(Survey$Libellé.FR)] <- Survey$Libellé.FR[!is.na(Survey$Libellé.FR)]
 Survey$label_en[!is.na(Survey$Libellé.EN)] <- Survey$Libellé.EN[!is.na(Survey$Libellé.EN)]
 table(is.na(Survey$label_fr), useNA = "always")
@@ -546,7 +557,7 @@ modelsummary::modelsummary(
   stars = TRUE,
   gof_omit = "AIC|BIC|Log.Lik|F|RMSE|Deviance|Num\\.obs\\.",
   notes = c("Outcome: Sovereignty-Related Pledge Recalled", "Standard errors in parentheses.",
-   "Method: Binomial logistic regression. Coefficients for Models 2 and 3 are odds ratios."),
+   "Method: Binomial logistic regression. Coefficients are odds ratios."),
   coef_rename = c(
     "pid_liberalLiberal" = "Party ID: Liberal",
     "importance_culture" = "Importance of Culture and Nationalism",
@@ -568,10 +579,18 @@ ActualPledgeDataset <- Survey |>
 prop.table(table(ActualPledgeDataset$pid_liberal, ActualPledgeDataset$promise_liberal, useNA = "always"), 1)
 
 # Save top pledges recalled to XLSX ####
-TopPledges <- Survey |>
+TopFirstPledges <- Survey |>
   filter(actual_pledge_recalled == "Actual pledge recalled") |>
   group_by(promise_number) |>
+  dplyr::summarize(count = n(), .groups = "drop")
+TopSecondPledges <- Survey |> # when a respondent chooses 2 pledges, count both
+  filter(actual_pledge_recalled == "Actual pledge recalled") |>
+  group_by(X85) |> # second promise
   dplyr::summarize(count = n(), .groups = "drop") |>
+  rename(promise_number = X85)
+TopPledges <- rbind(TopFirstPledges, TopSecondPledges) |>
+  group_by(promise_number) |>
+  dplyr::summarize(count = sum(count), .groups = "drop") |>
   arrange(desc(count)) |>
   left_join(
     Survey |>
