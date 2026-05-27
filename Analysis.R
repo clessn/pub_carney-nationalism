@@ -608,7 +608,9 @@ table(Survey$pid_liberal, Survey$sovereigntyrelatedpledgeoranything, useNA = "al
 
 ActualPledgeDataset <- Survey |>
   filter(actual_pledge_recalled == "Actual pledge recalled")
-prop.table(table(ActualPledgeDataset$pid_liberal, ActualPledgeDataset$promise_liberal, useNA = "always"), 1)
+# Row proportions: of actual pledge mentions by Liberal partisans, what share were Liberal Party pledges?
+# Result: ~71% of actual pledge mentions by Liberal partisans were Liberal Party pledges.
+prop.table(table(ActualPledgeDataset$pid_party, ActualPledgeDataset$promise_party, useNA = "always"), 1)
 
 # Save top pledges recalled to XLSX ####
 TopFirstPledges <- Survey |>
