@@ -1,5 +1,5 @@
 # Load packages and datasets ####
-pacman::p_load(tidyverse, anesrake, openxlsx, survey, modelsummary, flextable, stringi)
+pacman::p_load(tidyverse, anesrake, openxlsx, modelsummary, flextable, stringi, estimatr, survey)
 Survey <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/Survey_Questionnaire_With_Coding.xlsx")
 Survey <- Survey[3:nrow(Survey),]
 OppositionPartyPledges <- openxlsx::read.xlsx("_SharedFolder_carney-nationalism/_data/OppositionPartyPledges.xlsx")
@@ -127,10 +127,16 @@ Survey$pid_liberal <- factor(
   levels = c("Other", "Liberal")
 )
 table(Survey$pid_liberal, useNA = "always")
-Survey$pid_party <- factor(as.numeric(Survey$fed_pid), levels = seq(1, 7),
-  labels = c("Liberal", "Conservative", "NDP", "Green", "Bloc", "Other", "None")
+Survey$pid_party <- as.numeric(Survey$fed_pid)
+Survey$pid_party[Survey$pid_party == 7] <- NA
+Survey$pid_party_alt <- factor(Survey$pid_party, levels = c(2, 1, 3, 5, 4, 6),
+  labels = c("Conservative", "Liberal", "NDP", "Bloc", "Other", "Other")
+) # no green & independent first for reg table
+Survey$pid_party <- factor(Survey$pid_party, levels = seq(1, 6),
+  labels = c("Liberal", "Conservative", "NDP", "Green", "Bloc", "Other")
 )
 table(Survey$pid_party, useNA = "always")
+table(Survey$pid_party_alt, useNA = "always")
 
 ## Importance of culture and nationalism ####
 table(Survey$issue_importanceSlid_6, useNA = "always")
@@ -352,7 +358,7 @@ PartyRecallSovereigntyPlotWeightedStats <- Survey |>
 
 ggplot(PartyRecallSovereigntyPlotWeightedStats, aes(x = pid_party, y = p100)) +
   geom_errorbar(aes(ymin = lower, ymax = upper),
-   position = position_dodge(width = 0.75), width = 0.2, size = 0.8) +
+   position = position_dodge(width = 0.75), width = 0.2, linewidth = 0.8) +
   geom_point(aes(x = pid_party, y = p100),
    position = position_dodge(width = 0.75), size = 3, inherit.aes = FALSE) +
   scale_y_continuous(limits = c(0, 100)) +
@@ -394,7 +400,7 @@ PartyRecallActualPlotWeightedStats <- Survey |>
   dplyr::filter(actual_pledge_recalled == "Actual pledge recalled")
 ggplot(PartyRecallActualPlotWeightedStats, aes(x = pid_party, y = p100)) +
   geom_errorbar(aes(ymin = lower, ymax = upper),
-   position = position_dodge(width = 0.75), width = 0.2, size = 0.8) +
+   position = position_dodge(width = 0.75), width = 0.2, linewidth = 0.8) +
   geom_point(aes(x = pid_party, y = p100),
    position = position_dodge(width = 0.75), size = 3, inherit.aes = FALSE) +
   scale_y_continuous(limits = c(0, 100)) +
@@ -435,7 +441,7 @@ QualityOfRecallWeightedStats <- df |>
 
 ggplot(QualityOfRecallWeightedStats, aes(x = quality_of_recall, y = p100)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, size = 0.8) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, linewidth = 0.8) +
   scale_y_continuous(limits = c(0, 50)) +
   geom_hline(yintercept = 50, linetype = "dashed") +
   labs(
@@ -455,7 +461,7 @@ df_h2 <- Survey |>
     recalled_num = as.numeric(actual_pledge_recalled == "Actual pledge recalled")
   )
 
-design_h2 <- svydesign(ids = ~1, weights = ~weights, data = df_h2)
+design_h2 <- survey::svydesign(ids = ~1, weights = ~weights, data = df_h2)
 
 group_means_h2 <- svyby(
   ~recalled_num,
@@ -487,7 +493,7 @@ list(
 # plot group means with 95% CIs
 ggplot(group_means_h2, aes(x = treatment, y = mean)) +
   geom_point(size = 3) +
-  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, size = 0.8) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, linewidth = 0.8) +
   scale_y_continuous(limits = c(0, 100)) +
   geom_hline(yintercept = 50, linetype = "dashed") +
   labs(
@@ -507,11 +513,14 @@ ModelSovereigntyPIDCtrl <- glm(sovereigntyrelatedpledgeoranything ~ pid_liberal 
 summary(ModelSovereigntyPIDCtrl)
 
 # Nationalism model: importance_culture ~ pid_liberal + controls
-ModelNationalismPID <- lm(importance_culture ~ pid_liberal, data = Survey)
+ModelNationalismPID <- estimatr::lm_robust(
+  data = Survey, importance_culture ~ pid_party_alt,
+  se_type = "HC2")
 summary(ModelNationalismPID)
 
-ModelNationalismPIDCtrl <- lm(importance_culture ~ pid_liberal + education + language + province + age + gender,
-  data = Survey)
+ModelNationalismPIDCtrl <- estimatr::lm_robust(
+  data = Survey, importance_culture ~ pid_party_alt + education + language + province + age + gender,
+  se_type = "HC2")
 summary(ModelNationalismPIDCtrl)
 
 # Model: outcome controlled for mediator (sovereigntyrelatedpledgeoranything ~ pid_liberal + importance_culture + controls)
@@ -524,15 +533,20 @@ summary(ModelH3Ctrl)
 
 # Display results with modelsummary and create a flextable from the three models and save as a Word document
 modelsummary::modelsummary(
-  models = list("(1)" = ModelNationalismPID, "(2)" = ModelNationalismPIDCtrl),
+  models = list(
+    "(1)" = ModelNationalismPID,
+    "(2)" = ModelNationalismPIDCtrl),
   output = "flextable",
-  statistic = "std.error",
-  exponentiate = TRUE,
   stars = TRUE,
-  gof_omit = "AIC|BIC|Log.Lik|F|RMSE|Deviance|Num\\.obs\\.",
-  notes = c("Outcome: Importance of Culture and Nationalism", "Standard errors in parentheses.", "Method: OLS regression."),
+  notes = c("Outcome: Importance of culture and nationalism",
+            "Method: OLS regression. Robust standard errors (HC2) in parentheses.",
+            paste("Reference categories: Conservative Party ID; Non-university education; English language;",
+                  "Regions: Ontario + Atlantic + North; 18-24 years old; Men")),
   coef_rename = c(
-    "pid_liberalLiberal" = "Party ID: Liberal",
+    "pid_party_altLiberal" = "Party ID: Liberal",
+    "pid_party_altNDP" = "Party ID: NDP",
+    "pid_party_altBloc" = "Party ID: Bloc Québécois",
+    "pid_party_altOther" = "Party ID: Other",
     "educationUniversity" = "Education: University",
     "languageFrench" = "Language: French",
     "languageOther" = "Language: Other",
@@ -552,10 +566,7 @@ modelsummary::modelsummary(
     "(6)" = ModelH3Ctrl
   ),
   output = "flextable",
-  statistic = "std.error",
-  exponentiate = FALSE,
   stars = TRUE,
-  gof_omit = "AIC|BIC|Log.Lik|F|RMSE|Deviance|Num\\.obs\\.",
   notes = c("Outcome: Sovereignty-Related Pledge Recalled", "Standard errors in parentheses.",
    "Method: Binomial logistic regression. Coefficients are odds ratios."),
   coef_rename = c(
