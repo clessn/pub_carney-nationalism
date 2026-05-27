@@ -96,6 +96,15 @@ table(Survey$sov_y_n.y, useNA = "always")
 Survey$sov_y_n <- Survey$sov_y_n.x
 Survey$sov_y_n[is.na(Survey$sov_y_n.x)] <- Survey$sov_y_n.y[is.na(Survey$sov_y_n.x)]
 table(Survey$sov_y_n, useNA = "always")
+sov_lookup <- bind_rows(
+  OppositionPartyPledges |> select(promise_number, sov_y_n),
+  GovernmentPartyPledges |> rename(promise_number = Numéro) |> select(promise_number, sov_y_n)
+) |>
+  filter(!is.na(promise_number)) |>
+  distinct(promise_number, .keep_all = TRUE)
+Survey$sov_y_n_second <- sov_lookup$sov_y_n[match(Survey$X85, sov_lookup$promise_number)]
+Survey$sov_y_n[!is.na(Survey$sov_y_n_second) & Survey$sov_y_n_second == 1] <- 1
+table(Survey$sov_y_n, useNA = "always") # updated to include second pledges
 Survey$sovereigntyrelated <- 0
 Survey$sovereigntyrelated[Survey$sov_y_n == 1] <- 1
 Survey$sovereigntyrelated[Survey$promise_number == "0.0.0.0.0.0"] <- 1
@@ -370,6 +379,8 @@ ggplot(PartyRecallSovereigntyPlotWeightedStats, aes(x = pid_party, y = p100)) +
 ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallSovereigntyPlotWeighted.png", width = 5.5, height = 4.25)
 sum(PartyRecallSovereigntyPlotWeightedStats$total_w)
 sum(PartyRecallSovereigntyPlotWeightedStats$sub_w)
+sum(PartyRecallSovereigntyPlotWeightedStats$total_w^2 /
+  PartyRecallSovereigntyPlotWeightedStats$sum_w2)
 sum(PartyRecallSovereigntyPlotWeightedStats$sum_w2)
 
 # same plot but for actual pledge recalled (weighted) instead of sovereignty-related pledge recalled
@@ -413,6 +424,8 @@ ggsave("_SharedFolder_carney-nationalism/_graph/PartyRecallActualPlotWeighted.pn
 sum(PartyRecallActualPlotWeightedStats$total_w)
 sum(PartyRecallActualPlotWeightedStats$sub_w)
 sum(PartyRecallActualPlotWeightedStats$sum_w2)
+sum(PartyRecallActualPlotWeightedStats$total_w^2 /
+  PartyRecallActualPlotWeightedStats$sum_w2)
 table(Survey$pid_party, Survey$actual_pledge_recalled, useNA = "always")
 
 # add weights to this plot
@@ -463,7 +476,7 @@ df_h2 <- Survey |>
 
 design_h2 <- survey::svydesign(ids = ~1, weights = ~weights, data = df_h2)
 
-group_means_h2 <- svyby(
+group_means_h2 <- survey::svyby(
   ~recalled_num,
   ~treatment,
   design_h2,
@@ -476,7 +489,7 @@ group_means_h2 <- svyby(
   rename(mean = recalled_num, se = se, lower = ci_l, upper = ci_u) |>
   mutate(across(c(mean, lower, upper), ~ .x * 100)) # percent scale
 
-ttest_h2 <- svyttest(recalled_num ~ treatment, design = design_h2)
+ttest_h2 <- survey::svyttest(recalled_num ~ treatment, design = design_h2)
 
 ttest_h2_tidy <- tibble(
   estimate_diff = as.numeric(ttest_h2$estimate), # difference in means (Treatment - Control)
@@ -505,11 +518,14 @@ ggsave("_SharedFolder_carney-nationalism/_graph/H2_PledgeRecallTreatmentEffect.p
 
 ## H3: Perceived importance of culture and nationalism mediates the relationship between sovereignty-pledge recognition and Liberal support. ####
 # Model: total effect (sovereigntyrelatedpledgeoranything ~ pid + controls)
-ModelSovereigntyPID <- glm(sovereigntyrelatedpledgeoranything ~ pid_liberal, family = binomial(), data = Survey)
+ModelSovereigntyPID <- glm(
+  data = Survey, sovereigntyrelatedpledgeoranything ~ pid_party_alt,
+  family = binomial())
 summary(ModelSovereigntyPID)
 
-ModelSovereigntyPIDCtrl <- glm(sovereigntyrelatedpledgeoranything ~ pid_liberal + education + language + province + age + gender,
-  family = binomial(), data = Survey)
+ModelSovereigntyPIDCtrl <- glm(
+  data = Survey, sovereigntyrelatedpledgeoranything ~ pid_party_alt + education + language + province + age + gender,
+  family = binomial())
 summary(ModelSovereigntyPIDCtrl)
 
 # Nationalism model: importance_culture ~ pid_liberal + controls
@@ -524,11 +540,15 @@ ModelNationalismPIDCtrl <- estimatr::lm_robust(
 summary(ModelNationalismPIDCtrl)
 
 # Model: outcome controlled for mediator (sovereigntyrelatedpledgeoranything ~ pid_liberal + importance_culture + controls)
-ModelH3 <- glm(sovereigntyrelatedpledgeoranything ~ pid_liberal + importance_culture, family = binomial(), data = Survey)
+ModelH3 <- glm(
+  data = Survey, sovereigntyrelatedpledgeoranything ~ pid_party_alt + importance_culture,
+  family = binomial())
 summary(ModelH3)
 
-ModelH3Ctrl <- glm(sovereigntyrelatedpledgeoranything ~ pid_liberal + importance_culture +
-  education + language + province + age + gender, family = binomial(), data = Survey)
+ModelH3Ctrl <- glm(
+  data = Survey, sovereigntyrelatedpledgeoranything ~ pid_party_alt + importance_culture +
+  education + language + province + age + gender,
+  family = binomial())
 summary(ModelH3Ctrl)
 
 # Display results with modelsummary and create a flextable from the three models and save as a Word document
@@ -567,10 +587,15 @@ modelsummary::modelsummary(
   ),
   output = "flextable",
   stars = TRUE,
-  notes = c("Outcome: Sovereignty-Related Pledge Recalled", "Standard errors in parentheses.",
-   "Method: Binomial logistic regression. Coefficients are odds ratios."),
+  notes = c("Outcome: Sovereignty-related pledge recalled",
+            "Method: Binomial logistic regression. Coefficients are odds ratios. Standard errors in parentheses.",
+            paste("Reference categories: Conservative Party ID; Non-university education; English language;",
+                  "Regions: Ontario + Atlantic + North; 18-24 years old; Men")),
   coef_rename = c(
-    "pid_liberalLiberal" = "Party ID: Liberal",
+    "pid_party_altLiberal" = "Party ID: Liberal",
+    "pid_party_altNDP" = "Party ID: NDP",
+    "pid_party_altBloc" = "Party ID: Bloc Québécois",
+    "pid_party_altOther" = "Party ID: Other",
     "importance_culture" = "Importance of Culture and Nationalism",
     "educationUniversity" = "Education: University",
     "languageFrench" = "Language: French",
