@@ -121,12 +121,8 @@ Survey$sovereigntyrelatedpledge <- factor(
   levels = c("Non-sovereignty-related pledge recalled", "Sovereignty-related pledge recalled")
 )
 table(Survey$sovereigntyrelatedpledge, useNA = "always")
-Survey$sovereigntyrelatedpledgeoranything <- 0
-Survey$sovereigntyrelatedpledgeoranything[Survey$sov_y_n == 1] <- 1
-Survey$sovereigntyrelatedpledgeoranything <- factor(
-  ifelse(Survey$sovereigntyrelatedpledgeoranything == 1, "Sovereignty-related pledge recalled", "Other answer"),
-  levels = c("Other answer", "Sovereignty-related pledge recalled")
-)
+Survey$sovereigntyrelatedpledgeoranything <- 0 # Other answer
+Survey$sovereigntyrelatedpledgeoranything[Survey$sov_y_n == 1] <- 1 # Sovereignty-related pledge recalled
 table(Survey$sovereigntyrelatedpledgeoranything, useNA = "always")
 
 ## Liberal Party identification ####
@@ -518,14 +514,14 @@ ggsave("_SharedFolder_carney-nationalism/_graph/H2_PledgeRecallTreatmentEffect.p
 
 ## H3: Perceived importance of culture and nationalism mediates the relationship between sovereignty-pledge recognition and Liberal support. ####
 # Model: total effect (sovereigntyrelatedpledgeoranything ~ pid + controls)
-ModelSovereigntyPID <- glm(
+ModelSovereigntyPID <- estimatr::lm_robust(
   data = Survey, sovereigntyrelatedpledgeoranything ~ pid_party_alt,
-  family = binomial())
+  se_type = "HC2")
 summary(ModelSovereigntyPID)
 
-ModelSovereigntyPIDCtrl <- glm(
+ModelSovereigntyPIDCtrl <- estimatr::lm_robust(
   data = Survey, sovereigntyrelatedpledgeoranything ~ pid_party_alt + education + language + province + age + gender,
-  family = binomial())
+  se_type = "HC2")
 summary(ModelSovereigntyPIDCtrl)
 
 # Nationalism model: importance_culture ~ pid_liberal + controls
@@ -540,15 +536,15 @@ ModelNationalismPIDCtrl <- estimatr::lm_robust(
 summary(ModelNationalismPIDCtrl)
 
 # Model: outcome controlled for mediator (sovereigntyrelatedpledgeoranything ~ pid_liberal + importance_culture + controls)
-ModelH3 <- glm(
+ModelH3 <- estimatr::lm_robust(
   data = Survey, sovereigntyrelatedpledgeoranything ~ pid_party_alt + importance_culture,
-  family = binomial())
+  se_type = "HC2")
 summary(ModelH3)
 
-ModelH3Ctrl <- glm(
+ModelH3Ctrl <- estimatr::lm_robust(
   data = Survey, sovereigntyrelatedpledgeoranything ~ pid_party_alt + importance_culture +
   education + language + province + age + gender,
-  family = binomial())
+  se_type = "HC2")
 summary(ModelH3Ctrl)
 
 # Display results with modelsummary and create a flextable from the three models and save as a Word document
@@ -588,7 +584,7 @@ modelsummary::modelsummary(
   output = "flextable",
   stars = TRUE,
   notes = c("Outcome: Sovereignty-related pledge recalled",
-            "Method: Binomial logistic regression. Coefficients are odds ratios. Standard errors in parentheses.",
+            "Method: OLS regression. Robust standard errors (HC2) in parentheses.",
             paste("Reference categories: Conservative Party ID; Non-university education; English language;",
                   "Regions: Ontario + Atlantic + North; 18-24 years old; Men")),
   coef_rename = c(
